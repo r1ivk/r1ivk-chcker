@@ -385,7 +385,6 @@ def run_live_checker(chat_id, message_id, combos, check_mode, user_id):
     except Exception:
         pass
         
-    # Send the hits file if any hits were found
     if hits_list:
         file_content = "\n".join(hits_list)
         file_bytes = io.BytesIO(file_content.encode('utf-8'))
