@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-r1livk Elite Advanced Xbox & Microsoft Core Engine ⚡ - Telegram Bot (Full Unlimited Bypass)
+r1livk Elite Advanced Xbox & Microsoft Core Engine ⚡ - Telegram Bot (Original Fixed)
 """
 
 import os
@@ -26,6 +26,7 @@ STATS_FILE = "user_stats.json"
 user_states = {}
 active_scans = {}
 user_usage = {}
+DAILY_LIMIT = 5000
 
 def load_json_data(filepath, default_val):
     if not os.path.exists(filepath):
@@ -51,7 +52,7 @@ def load_premium_users():
 
 def is_owner_or_bypass(user_id, username=None):
     try:
-        if int(user_id) == 6266959915:
+        if int(user_id) == OWNER_ID:
             return True
     except:
         pass
@@ -85,11 +86,24 @@ def update_user_stats(user_id, checked_count, hits_count, username=None):
     save_json_data(STATS_FILE, stats)
 
 def check_daily_limit(chat_id, new_lines_count, username=None):
-    # تم إلغاء الليمت تماماً وجعل الاستجابة تمرر كل الأسطر بلا قيود
-    return True, new_lines_count
+    if is_owner_or_bypass(chat_id, username):
+        return True, new_lines_count
+        
+    today = str(date.today())
+    if chat_id not in user_usage or user_usage[chat_id]["date"] != today:
+        user_usage[chat_id] = {"date": today, "count": 0}
+    current_used = user_usage[chat_id]["count"]
+    if current_used >= DAILY_LIMIT:
+        return False, 0
+    allowed_lines = min(new_lines_count, DAILY_LIMIT - current_used)
+    return True, allowed_lines
 
 def update_usage(chat_id, count, username=None):
-    pass
+    if is_owner_or_bypass(chat_id, username):
+        return
+    today = str(date.today())
+    if chat_id in user_usage and user_usage[chat_id]["date"] == today:
+        user_usage[chat_id]["count"] += count
 
 def extract_ppft(text):
     patterns = [
@@ -368,9 +382,13 @@ def handle_docs(message):
         with open(local_path, 'r', encoding='utf-8-sig', errors='ignore') as f:
             lines = [line.strip() for line in f if line.strip() and ':' in line]
 
-        # تمرير كامل الأسطر فوراً بدون أي قيود أو شروط ليمت
-        count_allowed = len(lines)
+        allowed, count_allowed = check_daily_limit(user_id, len(lines), username)
+        if not allowed or count_allowed <= 0:
+            bot.reply_to(message, "⚠️ Daily limit reached.")
+            if os.path.exists(local_path): os.remove(local_path)
+            return
 
+        lines = lines[:count_allowed]
         bot.reply_to(message, f"📥 File accepted. Initializing for {len(lines)} lines...")
         active_scans[chat_id] = True
         
