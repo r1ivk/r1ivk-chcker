@@ -15,7 +15,8 @@ import telebot
 from telebot import types
 
 TOKEN = "8896382526:AAFMror2dFQ1U0r6RRHrrya2PKuyuoTRtnw"
-OWNER_ID = 6266959915
+OWNER_ID = 6266959915       # ايدي حسابك
+OWNER_USERNAME = "r1ivk"     # يوزر الأونر
 CHANNEL_USERNAME = "@r1iv_k"  
 bot = telebot.TeleBot(TOKEN)
 
@@ -51,8 +52,9 @@ def save_premium_users(users_set):
         for uid in users_set:
             f.write(f"{uid}\n")
 
-def check_user_subscription(user_id):
-    if user_id == OWNER_ID or str(user_id) in load_premium_users():
+def check_user_subscription(user_id, username=None):
+    # استثناء الأونر تلقائياً بالايدي أو اليوزر لضمان عدم حدوث أي ليمت أبداً
+    if user_id == OWNER_ID or (username and username.lower() == OWNER_USERNAME.lower()) or str(user_id) in load_premium_users():
         return True
     try:
         member = bot.get_chat_member(CHANNEL_USERNAME, user_id)
@@ -80,8 +82,8 @@ def update_user_stats(user_id, checked_count, hits_count, username=None):
         stats[uid_str]["username"] = username
     save_json_data(STATS_FILE, stats)
 
-def check_daily_limit(chat_id, new_lines_count):
-    if chat_id == OWNER_ID or str(chat_id) in load_premium_users():
+def check_daily_limit(chat_id, new_lines_count, username=None):
+    if chat_id == OWNER_ID or (username and username.lower() == OWNER_USERNAME.lower()) or str(chat_id) in load_premium_users():
         return True, new_lines_count
     today = str(date.today())
     if chat_id not in user_usage or user_usage[chat_id]["date"] != today:
@@ -92,8 +94,8 @@ def check_daily_limit(chat_id, new_lines_count):
     allowed_lines = min(new_lines_count, DAILY_LIMIT - current_used)
     return True, allowed_lines
 
-def update_usage(chat_id, count):
-    if chat_id == OWNER_ID or str(chat_id) in load_premium_users():
+def update_usage(chat_id, count, username=None):
+    if chat_id == OWNER_ID or (username and username.lower() == OWNER_USERNAME.lower()) or str(chat_id) in load_premium_users():
         return
     today = str(date.today())
     if chat_id in user_usage and user_usage[chat_id]["date"] == today:
@@ -278,7 +280,8 @@ async def elite_check_account(combo):
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     chat_id = message.chat.id
-    if not check_user_subscription(chat_id):
+    username = message.from_user.username
+    if not check_user_subscription(chat_id, username):
         markup = types.InlineKeyboardMarkup(row_width=1)
         btn_channel = types.InlineKeyboardButton("📢 Join Channel Now", url=f"https://t.me/{CHANNEL_USERNAME.replace('@', '')}")
         btn_check = types.InlineKeyboardButton("🔄 Verify Subscription", callback_data="check_sub")
@@ -296,7 +299,7 @@ def send_welcome(message):
 
 @bot.message_handler(commands=['addprem'])
 def add_premium_cmd(message):
-    if message.from_user.id != OWNER_ID:
+    if message.from_user.id != OWNER_ID and (not message.from_user.username or message.from_user.username.lower() != OWNER_USERNAME.lower()):
         return
     try:
         parts = message.text.split()
@@ -310,7 +313,7 @@ def add_premium_cmd(message):
 
 @bot.message_handler(commands=['delprem'])
 def del_premium_cmd(message):
-    if message.from_user.id != OWNER_ID:
+    if message.from_user.id != OWNER_ID and (not message.from_user.username or message.from_user.username.lower() != OWNER_USERNAME.lower()):
         return
     try:
         parts = message.text.split()
@@ -327,7 +330,7 @@ def del_premium_cmd(message):
 
 @bot.message_handler(commands=['premkeys'])
 def list_premium_cmd(message):
-    if message.from_user.id != OWNER_ID:
+    if message.from_user.id != OWNER_ID and (not message.from_user.username or message.from_user.username.lower() != OWNER_USERNAME.lower()):
         return
     prem_users = load_premium_users()
     if not prem_users:
@@ -338,6 +341,7 @@ def list_premium_cmd(message):
 
 def show_main_menu(message):
     chat_id = message.chat.id if hasattr(message, 'chat') else message.chat.id
+    username = message.from_user.username if hasattr(message, 'from_user') and message.from_user else None
     msg_id = message.message.message_id if hasattr(message, 'message') and hasattr(message.message, 'message_id') else None
 
     markup = types.InlineKeyboardMarkup(row_width=1)
@@ -348,7 +352,7 @@ def show_main_menu(message):
     markup.add(btn_start, btn_top, btn_premium, btn_account)
 
     today = str(date.today())
-    if chat_id == OWNER_ID or str(chat_id) in load_premium_users():
+    if chat_id == OWNER_ID or (username and username.lower() == OWNER_USERNAME.lower()) or str(chat_id) in load_premium_users():
         status_text = "👑 Premium / Owner (Unlimited)"
     else:
         used = user_usage.get(chat_id, {}).get("count", 0) if user_usage.get(chat_id, {}).get("date") == today else 0
@@ -371,16 +375,17 @@ def show_main_menu(message):
 @bot.callback_query_handler(func=lambda call: True)
 def callback_query(call):
     chat_id = call.message.chat.id
+    username = call.from_user.username
 
     if call.data == "check_sub":
-        if check_user_subscription(chat_id):
+        if check_user_subscription(chat_id, username):
             bot.answer_callback_query(call.id, "✅ Verified successfully!", show_alert=True)
             show_main_menu(call.message)
         else:
             bot.answer_callback_query(call.id, "❌ Not joined yet!", show_alert=True)
         return
 
-    if not check_user_subscription(chat_id):
+    if not check_user_subscription(chat_id, username):
         bot.answer_callback_query(call.id, "⚠️ Subscribe to channel first!", show_alert=True)
         return
 
@@ -429,7 +434,7 @@ def callback_query(call):
 
     elif call.data == "my_account":
         today = str(date.today())
-        if chat_id == OWNER_ID or str(chat_id) in load_premium_users():
+        if chat_id == OWNER_ID or (username and username.lower() == OWNER_USERNAME.lower()) or str(chat_id) in load_premium_users():
             bot.answer_callback_query(call.id, "Status: Premium / Owner (Unlimited)\nMode: Elite Pipeline", show_alert=True)
         else:
             used = user_usage.get(chat_id, {}).get("count", 0) if user_usage.get(chat_id, {}).get("date") == today else 0
@@ -438,7 +443,8 @@ def callback_query(call):
 @bot.message_handler(content_types=['document'])
 def handle_docs(message):
     chat_id = message.chat.id
-    if not check_user_subscription(chat_id):
+    username = message.from_user.username
+    if not check_user_subscription(chat_id, username):
         bot.reply_to(message, f"⚠️ Join channel first: {CHANNEL_USERNAME}")
         return
 
@@ -453,7 +459,7 @@ def handle_docs(message):
         with open(local_path, 'r', encoding='utf-8-sig', errors='ignore') as f:
             lines = [line.strip() for line in f if line.strip() and ':' in line]
 
-        allowed, count_allowed = check_daily_limit(chat_id, len(lines))
+        allowed, count_allowed = check_daily_limit(chat_id, len(lines), username)
         if not allowed or count_allowed <= 0:
             bot.reply_to(message, "⚠️ Daily limit reached! Upgrade to Premium ($15/Month).")
             if os.path.exists(local_path): os.remove(local_path)
@@ -462,10 +468,10 @@ def handle_docs(message):
         lines = lines[:count_allowed]
         bot.reply_to(message, f"📥 File accepted. Initializing Elite Pipeline for {len(lines)} lines...")
         active_scans[chat_id] = True
-        username = message.from_user.username or message.from_user.first_name
+        uname = message.from_user.username or message.from_user.first_name
         
         import threading
-        threading.Thread(target=run_async_thread, args=(chat_id, local_path, lines, username)).start()
+        threading.Thread(target=run_async_thread, args=(chat_id, local_path, lines, uname)).start()
 
     except Exception as e:
         bot.reply_to(message, f"Error: {e}")
@@ -560,7 +566,7 @@ async def process_elite_scan(chat_id, filepath, lines, username):
         os.remove(filepath)
 
     update_user_stats(chat_id, checked, hits, username)
-    update_usage(chat_id, checked)
+    update_usage(chat_id, checked, username)
 
     final_msg = (
         f"🎉 **ELITE SCAN COMPLETED!**\n\n"
