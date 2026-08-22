@@ -254,7 +254,7 @@ def set_mode(call):
     
     try:
         bot.edit_message_text(
-            "📥 **Please send your combos list (user:pass format, one per line):**",
+            "📥 **Please send your combo file (.txt) or text list:**",
             chat_id=call.message.chat.id,
             message_id=call.message.message_id,
             parse_mode="Markdown",
@@ -263,13 +263,40 @@ def set_mode(call):
     except Exception:
         pass
 
-@bot.message_handler(func=lambda message: message.from_user.id in user_sessions and user_sessions[message.from_user.id]["step"] == "waiting_combos")
-def handle_combos(message):
+# معالجة الملفات المرفقة (سواء مرسلة مباشرة أو محولة من قناة)
+@bot.message_handler(content_types=['document'])
+def handle_docs(message):
     user_id = message.from_user.id
-    combos = [line.strip() for line in message.text.split("\n") if ':' in line.strip()]
-    
+    if user_id not in user_sessions or user_sessions[user_id].get("step") != "waiting_combos":
+        return
+        
+    try:
+        file_info = bot.get_file(message.document.file_id)
+        downloaded_file = bot.download_file(file_info.file_path)
+        text_content = downloaded_file.decode('utf-8', errors='ignore')
+        process_combos_text(message, text_content)
+    except Exception as e:
+        bot.send_message(message.chat.id, f"❌ Error reading file: {str(e)}")
+
+# معالجة النصوص المرسلة مباشرة
+@bot.message_handler(func=lambda message: message.from_user.id in user_sessions and user_sessions[message.from_user.id]["step"] == "waiting_combos")
+def handle_text_combos(message):
+    if message.document:
+        return # تم معالجتها في دالة الملفات
+    process_combos_text(message, message.text)
+
+def process_combos_text(message, raw_text):
+    user_id = message.from_user.id
+    # استخراج السطور التي تحتوي على فاصل ":" فقط وتجاهل باقي التوقيعات والنصوص العشوائية
+    combos = []
+    for line in raw_text.split("\n"):
+        line = line.strip()
+        if ':' in line and not line.startswith("http") and not line.startswith("Time"):
+            # تنظيف السطر من أي مسافات زائدة
+            combos.append(line)
+            
     if not combos:
-        bot.send_message(message.chat.id, "❌ No valid combos found. Please send in `user:pass` format:")
+        bot.send_message(message.chat.id, "❌ No valid combos found in file/text. Please send a valid list (`user:pass` format):")
         return
         
     mode = user_sessions[user_id]["mode"]
