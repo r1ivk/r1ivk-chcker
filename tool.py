@@ -10,8 +10,8 @@ import time
 from datetime import datetime
 import io
 
-# Telegram Bot Token
-TELEGRAM_TOKEN = "YOUR_TELEGRAM_BOT_TOKEN"
+# Telegram Bot Token (Updated)
+TELEGRAM_TOKEN = "8896382526:AAFMror2dFQ1U0r6RRHrrya2PKuyuoTRtnw"
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
 # User Sessions Storage
@@ -282,17 +282,15 @@ def handle_docs(message):
 @bot.message_handler(func=lambda message: message.from_user.id in user_sessions and user_sessions[message.from_user.id]["step"] == "waiting_combos")
 def handle_text_combos(message):
     if message.document:
-        return # تم معالجتها في دالة الملفات
+        return
     process_combos_text(message, message.text)
 
 def process_combos_text(message, raw_text):
     user_id = message.from_user.id
-    # استخراج السطور التي تحتوي على فاصل ":" فقط وتجاهل باقي التوقيعات والنصوص العشوائية
     combos = []
     for line in raw_text.split("\n"):
         line = line.strip()
         if ':' in line and not line.startswith("http") and not line.startswith("Time"):
-            # تنظيف السطر من أي مسافات زائدة
             combos.append(line)
             
     if not combos:
