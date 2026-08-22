@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-r1livk Checker ⚡ - Telegram Bot (Heavy Gaming Edition - No Rewards)
+r1livk Checker ⚡ - Telegram Bot (Heavy Gaming Edition)
 """
 
 import os
