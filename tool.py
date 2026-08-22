@@ -300,7 +300,7 @@ def check_single_account(combo, proxy_list=None):
                         break
 
         if not ms_token:
-            token_match = re.search(r'access_token=([^&\s"\']+)', login_req.text)
+            token_match = re.search(r'access_token=([^&\s\"\']+)', login_req.text)
             if token_match:
                 ms_token = token_match.group(1)
         
