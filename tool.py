@@ -200,13 +200,16 @@ def send_welcome(message):
     )
     bot.send_message(message.chat.id, welcome_text, parse_mode="Markdown", reply_markup=markup)
 
-@bot.callback_query_handler(func=lambda call: call.data in ["start_scan", "services", "cracker", "refer", "leaderboard", "buy", "profile", "close_bot"])
+@bot.callback_query_handler(func=lambda call: call.data in ["start_scan", "services", "cracker", "refer", "leaderboard", "buy", "profile", "close_bot", "main_menu"])
 def handle_menu(call):
     bot.answer_callback_query(call.id)
     chat_id = call.message.chat.id
     
     if call.data == "close_bot":
-        bot.delete_message(chat_id, call.message.message_id)
+        try:
+            bot.delete_message(chat_id, call.message.message_id)
+        except Exception:
+            pass
         return
         
     if call.data == "start_scan":
@@ -216,25 +219,28 @@ def handle_menu(call):
             types.InlineKeyboardButton("🔍 Full Capture", callback_data="mode_2"),
             types.InlineKeyboardButton("🔙 Back", callback_data="main_menu")
         )
-        bot.edit_message_text("📂 **Select Checking Mode:**", chat_id=chat_id, message_id=call.message.message_id, parse_mode="Markdown", reply_markup=markup)
+        try:
+            bot.edit_message_text("📂 **Select Checking Mode:**", chat_id=chat_id, message_id=call.message.message_id, parse_mode="Markdown", reply_markup=markup)
+        except Exception:
+            pass
     elif call.data == "main_menu":
-        send_welcome_edit(call)
+        markup = types.InlineKeyboardMarkup(row_width=2)
+        markup.add(
+            types.InlineKeyboardButton("🚀 START", callback_data="start_scan"),
+            types.InlineKeyboardButton("❌ CLOSE", callback_data="close_bot"),
+            types.InlineKeyboardButton("🔑 SERVICES", callback_data="services"),
+            types.InlineKeyboardButton("🔥 CRACKER", callback_data="cracker"),
+            types.InlineKeyboardButton("🎁 REFER", callback_data="refer"),
+            types.InlineKeyboardButton("🏆 LEADERBOARD", callback_data="leaderboard"),
+            types.InlineKeyboardButton("💎 BUY", callback_data="buy"),
+            types.InlineKeyboardButton("👤 PROFILE", callback_data="profile")
+        )
+        try:
+            bot.edit_message_text("💎 **r1ivk Checker Bot** 💎\n\nWelcome back! Choose an option from the menu below:", chat_id=chat_id, message_id=call.message.message_id, parse_mode="Markdown", reply_markup=markup)
+        except Exception:
+            pass
     else:
         bot.answer_callback_query(call.id, "Section under development!", show_alert=True)
-
-def send_welcome_edit(call):
-    markup = types.InlineKeyboardMarkup(row_width=2)
-    markup.add(
-        types.InlineKeyboardButton("🚀 START", callback_data="start_scan"),
-        types.InlineKeyboardButton("❌ CLOSE", callback_data="close_bot"),
-        types.InlineKeyboardButton("🔑 SERVICES", callback_data="services"),
-        types.InlineKeyboardButton("🔥 CRACKER", callback_data="cracker"),
-        types.InlineKeyboardButton("🎁 REFER", callback_data="refer"),
-        types.InlineKeyboardButton("🏆 LEADERBOARD", callback_data="leaderboard"),
-        types.InlineKeyboardButton("💎 BUY", callback_data="buy"),
-        types.InlineKeyboardButton("👤 PROFILE", callback_data="profile")
-    )
-    bot.edit_message_text("💎 **r1ivk Checker Bot** 💎\n\nWelcome back! Choose an option from the menu below:", chat_id=call.message.chat.id, message_id=call.message.message_id, parse_mode="Markdown", reply_markup=markup)
 
 @bot.callback_query_handler(func=lambda call: call.data in ["mode_1", "mode_2"])
 def set_mode(call):
@@ -245,13 +251,16 @@ def set_mode(call):
     markup = types.InlineKeyboardMarkup()
     markup.add(types.InlineKeyboardButton("🔙 Back", callback_data="start_scan"))
     
-    bot.edit_message_text(
-        "📥 **Please send your combos list (user:pass format, one per line):**",
-        chat_id=call.message.chat.id,
-        message_id=call.message.message_id,
-        parse_mode="Markdown",
-        reply_markup=markup
-    )
+    try:
+        bot.edit_message_text(
+            "📥 **Please send your combos list (user:pass format, one per line):**",
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            parse_mode="Markdown",
+            reply_markup=markup
+        )
+    except Exception:
+        pass
 
 @bot.message_handler(func=lambda message: message.from_user.id in user_sessions and user_sessions[message.from_user.id]["step"] == "waiting_combos")
 def handle_combos(message):
@@ -265,25 +274,25 @@ def handle_combos(message):
     mode = user_sessions[user_id]["mode"]
     user_sessions[user_id]["stop"] = False
     
-    # Send initial progress dashboard message
     markup = types.InlineKeyboardMarkup()
     markup.add(types.InlineKeyboardButton("🔴 Stop Scan", callback_data=f"stop_scan_{user_id}"))
     
-    initial_text = generate_progress_text(0, len(combos), 0, 0, 0, 0, 0, 0, "00:00:00", "00:00", 0, "Running...")
+    initial_text = generate_progress_text(0, len(combos), 0, 0, 0, 0, 0, "00:00:00", "00:00", 0, "Running...")
     prog_msg = bot.send_message(message.chat.id, initial_text, parse_mode="Markdown", reply_markup=markup)
     
-    # Run checker in background thread
     threading.Thread(target=run_live_checker, args=(message.chat.id, prog_msg.message_id, combos, mode, user_id)).start()
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("stop_scan_"))
 def stop_scan(call):
-    uid = int(call.data.split("_")[2])
-    if uid in user_sessions:
-        user_sessions[uid]["stop"] = True
+    try:
+        uid = int(call.data.split("_")[2])
+        if uid in user_sessions:
+            user_sessions[uid]["stop"] = True
+    except Exception:
+        pass
     bot.answer_callback_query(call.id, "Scan stopped by user!")
 
 def generate_progress_text(checked, total, gamepass, full_captures, two_fa, bad, cpm, elapsed_str, eta_str, progress_percent, status_title):
-    # Create progress bar like [████████░░] 80.0%
     filled_blocks = int(progress_percent // 10)
     bar = "█" * filled_blocks + "░" * (10 - filled_blocks)
     
@@ -325,16 +334,21 @@ def run_live_checker(chat_id, message_id, combos, check_mode, user_id):
         
         if status == "GAME_PASS_HIT":
             gamepass += 1
-            bot.send_message(chat_id, f"🎯 **GamePass Hit!**\n`{hit_data}`", parse_mode="Markdown")
+            try:
+                bot.send_message(chat_id, f"🎯 **GamePass Hit!**\n`{hit_data}`", parse_mode="Markdown")
+            except Exception:
+                pass
         elif status == "FULL_CAPTURE_HIT":
             full_captures += 1
-            bot.send_message(chat_id, f"🎯 **Full Capture Hit!**\n`{hit_data}`", parse_mode="Markdown")
+            try:
+                bot.send_message(chat_id, f"🎯 **Full Capture Hit!**\n`{hit_data}`", parse_mode="Markdown")
+            except Exception:
+                pass
         elif status == "BAD_CREDENTIALS":
             bad += 1
         elif status == "2FA_REQUIRED":
             two_fa += 1
             
-        # Update metrics every 1 second or every 5 items to avoid Telegram Flood limits
         current_time = time.time()
         if current_time - last_update_time >= 1.5 or checked == total:
             last_update_time = current_time
@@ -354,10 +368,9 @@ def run_live_checker(chat_id, message_id, combos, check_mode, user_id):
             
             try:
                 bot.edit_message_text(progress_text, chat_id=chat_id, message_id=message_id, parse_mode="Markdown")
-        except Exception:
-            pass
+            except Exception:
+                pass
 
-    # Final Summary Screen matching screenshot layout
     final_elapsed = int(time.time() - start_time)
     final_elapsed_str = time.strftime("%H:%M:%S", time.gmtime(final_elapsed))
     final_cpm = int((total / (final_elapsed / 60))) if final_elapsed > 0 else 0
