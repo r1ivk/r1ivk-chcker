@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-r1livk Elite Advanced Xbox & Microsoft Core Engine ⚡ - Telegram Bot (Fixed Owner Limit)
+r1livk Elite Advanced Xbox & Microsoft Core Engine ⚡ - Telegram Bot (Hardcoded Owner Bypass)
 """
 
 import os
@@ -53,8 +53,9 @@ def save_premium_users(users_set):
             f.write(f"{uid}\n")
 
 def is_owner(user_id, username=None):
+    # استثناء فوري ومباشر للأيدي الخاص بك بغض النظر عن أي شيء
     try:
-        if int(user_id) == int(OWNER_ID):
+        if int(user_id) == 6266959915 or int(user_id) == int(OWNER_ID):
             return True
     except:
         pass
@@ -63,7 +64,7 @@ def is_owner(user_id, username=None):
     return False
 
 def check_user_subscription(user_id, username=None):
-    if is_owner(user_id, username) or str(user_id) in load_premium_users():
+    if is_owner(user_id, username) or str(user_id) == "6266959915" or str(user_id) in load_premium_users():
         return True
     try:
         member = bot.get_chat_member(CHANNEL_USERNAME, user_id)
@@ -92,8 +93,8 @@ def update_user_stats(user_id, checked_count, hits_count, username=None):
     save_json_data(STATS_FILE, stats)
 
 def check_daily_limit(chat_id, new_lines_count, username=None):
-    # استثناء تام وفوري للأونر والأيدي الخاص بك والمميزين
-    if is_owner(chat_id, username) or str(chat_id) in load_premium_users() or int(chat_id) == int(OWNER_ID):
+    # استثناء تام ومبرمج برمجياً لرقم الأيدي الخاص بك 6266959915
+    if is_owner(chat_id, username) or str(chat_id) == "6266959915" or str(chat_id) in load_premium_users():
         return True, new_lines_count
         
     today = str(date.today())
@@ -106,7 +107,7 @@ def check_daily_limit(chat_id, new_lines_count, username=None):
     return True, allowed_lines
 
 def update_usage(chat_id, count, username=None):
-    if is_owner(chat_id, username) or str(chat_id) in load_premium_users() or int(chat_id) == int(OWNER_ID):
+    if is_owner(chat_id, username) or str(chat_id) == "6266959915" or str(chat_id) in load_premium_users():
         return
     today = str(date.today())
     if chat_id in user_usage and user_usage[chat_id]["date"] == today:
@@ -379,16 +380,16 @@ def show_main_menu(message):
     btn_account = types.InlineKeyboardButton("👤 My Account", callback_data="my_account")
     markup.add(btn_start, btn_top, btn_premium, btn_account)
 
-    if is_owner(user_id, username) or str(user_id) in load_premium_users() or int(user_id) == int(OWNER_ID):
-        status_text = "👑 Owner / Premium (Unlimited)"
+    if is_owner(user_id, username) or str(user_id) == "6266959915" or str(user_id) in load_premium_users():
+        status_text = "👑 Owner / Unlimited"
     else:
         today = str(date.today())
         used = user_usage.get(chat_id, {}).get("count", 0) if user_usage.get(chat_id, {}).get("date") == today else 0
         status_text = f"👤 Free ({used}/5000 lines today)"
 
     text = (
-        "⚡ **r1livk Elite Xbox Core Engine - V5.2** ⚡\n\n"
-        "Engine upgraded & Owner limit bypass fixed.\n"
+        "⚡ **r1livk Elite Xbox Core Engine - V5.3** ⚡\n\n"
+        "Engine upgraded & Hardcoded Owner bypass applied.\n"
         f"Your Status: {status_text}\n\n"
         "Select an option:"
     )
@@ -462,8 +463,8 @@ def callback_query(call):
         bot.answer_callback_query(call.id, "💎 Premium Plan ($15/Month - Unlimited Lines)\nContact Owner: @r1ivk", show_alert=True)
 
     elif call.data == "my_account":
-        if is_owner(user_id, username) or str(user_id) in load_premium_users() or int(user_id) == int(OWNER_ID):
-            bot.answer_callback_query(call.id, "Status: Owner / Premium (Unlimited)\nMode: Elite Pipeline", show_alert=True)
+        if is_owner(user_id, username) or str(user_id) == "6266959915" or str(user_id) in load_premium_users():
+            bot.answer_callback_query(call.id, "Status: Owner / Unlimited\nMode: Elite Pipeline", show_alert=True)
         else:
             today = str(date.today())
             used = user_usage.get(chat_id, {}).get("count", 0) if user_usage.get(chat_id, {}).get("date") == today else 0
