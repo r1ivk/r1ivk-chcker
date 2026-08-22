@@ -15,7 +15,7 @@ import telebot
 from telebot import types
 
 TOKEN = "8896382526:AAFMror2dFQ1U0r6RRHrrya2PKuyuoTRtnw"
-OWNER_ID = 6266959915       # ايدي حسابك
+OWNER_ID = 6266959915       # ايدي حسابك الجديد
 OWNER_USERNAME = "r1ivk"     # يوزر الأونر
 CHANNEL_USERNAME = "@r1iv_k"  
 bot = telebot.TeleBot(TOKEN)
@@ -53,7 +53,6 @@ def save_premium_users(users_set):
             f.write(f"{uid}\n")
 
 def check_user_subscription(user_id, username=None):
-    # استثناء الأونر تلقائياً بالايدي أو اليوزر لضمان عدم حدوث أي ليمت أبداً
     if user_id == OWNER_ID or (username and username.lower() == OWNER_USERNAME.lower()) or str(user_id) in load_premium_users():
         return True
     try:
