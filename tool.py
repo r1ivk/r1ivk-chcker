@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-r1livk Checker ⚡ - Telegram Bot (Heavy Gaming Edition - No Rewards)
+r1livk Checker ⚡ - Telegram Bot (Heavy Gaming Edition - Clean English)
 """
 
 import os
@@ -60,7 +60,7 @@ def check_user_subscription(user_id):
     return False
 
 REQUEST_TIMEOUT = 30
-MAX_THREADS = 4  # تم تخفيضها قليلاً لمنع حظر الـ APIs وضمان جودة الاستجابة
+MAX_THREADS = 4  
 
 active_scans = {}
 user_usage = {}  
@@ -361,7 +361,6 @@ def check_single_account(combo, proxy_list=None):
         has_active_gp = "Active" in final_gp or has_gp_basic
         has_games = len(owned_games_list) > 0
         
-        # الشرط الصارم لرفض الصفر وقبول الهيتس الحقيقية فقط
         is_real_hit = (gscore_int > 0) or has_mc or has_active_gp or has_games
         
         if not is_real_hit:
@@ -388,15 +387,15 @@ def send_welcome(message):
     
     if not check_user_subscription(chat_id):
         markup = types.InlineKeyboardMarkup(row_width=1)
-        btn_channel = types.InlineKeyboardButton("📢 اشترك في القناة الآن", url=f"https://t.me/{CHANNEL_USERNAME.replace('@', '')}")
-        btn_check = types.InlineKeyboardButton("🔄 تحقق من الاشتراك", callback_data="check_sub")
+        btn_channel = types.InlineKeyboardButton("📢 Join Channel Now", url=f"https://t.me/{CHANNEL_USERNAME.replace('@', '')}")
+        btn_check = types.InlineKeyboardButton("🔄 Verify Subscription", callback_data="check_sub")
         markup.add(btn_channel, btn_check)
         
         bot.send_message(
             chat_id, 
-            "⚠️ **عذراً، يجب عليك الاشتراك في قناة البوت أولاً لتتمكن من استخدامه!**\n\n"
-            f"القناة: {CHANNEL_USERNAME}\n\n"
-            "بعد الاشتراك، اضغط على زر **(تحقق من الاشتراك)** بالأسفل 👇",
+            "⚠️ **Sorry, you must subscribe to the bot channel first to use it!**\n\n"
+            f"Channel: {CHANNEL_USERNAME}\n\n"
+            "After subscribing, click the **(Verify Subscription)** button below 👇",
             parse_mode="Markdown",
             reply_markup=markup
         )
@@ -448,14 +447,14 @@ def callback_query(call):
 
     if call.data == "check_sub":
         if check_user_subscription(chat_id):
-            bot.answer_callback_query(call.id, "✅ شكراً لاشتراكك! تم فتح البوت بنجاح.", show_alert=True)
+            bot.answer_callback_query(call.id, "✅ Thanks for subscribing! Bot unlocked successfully.", show_alert=True)
             show_main_menu(call.message)
         else:
-            bot.answer_callback_query(call.id, "❌ لم تقم بالاشتراك في القناة بعد! الرجاء الاشتراك أولاً.", show_alert=True)
+            bot.answer_callback_query(call.id, "❌ You haven't subscribed to the channel yet! Please join first.", show_alert=True)
         return
 
     if not check_user_subscription(chat_id):
-        bot.answer_callback_query(call.id, "⚠️ يجب عليك الاشتراك في القناة أولاً!", show_alert=True)
+        bot.answer_callback_query(call.id, "⚠️ You must subscribe to the channel first!", show_alert=True)
         return
 
     if call.data == "start_checker":
@@ -537,7 +536,7 @@ def handle_docs(message):
     chat_id = message.chat.id
     
     if not check_user_subscription(chat_id):
-        bot.reply_to(message, f"⚠️ يجب عليك الاشتراك في قناة البوت أولاً: {CHANNEL_USERNAME}")
+        bot.reply_to(message, f"⚠️ You must subscribe to the bot channel first: {CHANNEL_USERNAME}")
         return
 
     current_mode = user_states.get(chat_id, "combo")
@@ -555,23 +554,47 @@ def handle_docs(message):
                 raw_proxies = [line.strip() for line in f if line.strip() and ':' in line]
 
             if not raw_proxies:
-                bot.reply_to(message, "❌ ملف البروكسي فارغ أو غير صحيح.")
+                bot.reply_to(message, "❌ Proxy file is empty or invalid.")
                 if os.path.exists(local_path): os.remove(local_path)
                 return
 
-            msg = bot.reply_to(message, f"🔄 جارٍ فحص وتصفية {len(raw_proxies)} بروكسي بنظام الـ Stealth... ⏳")
+            total_proxies = len(raw_proxies)
+            msg = bot.reply_to(message, f"🔄 Initializing Proxy Filter... Total: {total_proxies} ⏳")
             
             working_proxies = []
+            tested_count = 0
             lock = threading.Lock()
 
             def proxy_worker(proxy):
+                nonlocal tested_count
                 is_working, _ = test_single_proxy(proxy)
-                if is_working:
-                    with lock:
+                with lock:
+                    tested_count += 1
+                    if is_working:
                         working_proxies.append(proxy)
 
-            with ThreadPoolExecutor(max_workers=20) as executor:
-                executor.map(proxy_worker, raw_proxies)
+            # تشغيل الفلترة عبر ThreadPoolExecutor وتحديث الرسالة لحظياً
+            with ThreadPoolExecutor(max_workers=25) as executor:
+                futures = [executor.submit(proxy_worker, proxy) for proxy in raw_proxies]
+                
+                while any(not f.done() for f in futures):
+                    with lock:
+                        curr_tested = tested_count
+                        curr_live = len(working_proxies)
+                    
+                    progress_pct = (curr_tested / total_proxies) * 100
+                    live_proxy_text = (
+                        f"🌐 **Filtering Proxies (Live)...**\n\n"
+                        f"📊 Total Proxies: {total_proxies}\n"
+                        f"🔍 Tested: {curr_tested} / {total_proxies} ({progress_pct:.1f}%)\n"
+                        f"🟢 Live / Working: {curr_live}\n"
+                        f"🔴 Dead / Failed: {curr_tested - curr_live}"
+                    )
+                    try:
+                        bot.edit_message_text(live_proxy_text, chat_id=chat_id, message_id=msg.message_id, parse_mode="Markdown")
+                    except:
+                        pass
+                    time.sleep(1)
 
             user_proxies[chat_id] = working_proxies
             user_states[chat_id] = "combo"
@@ -579,13 +602,15 @@ def handle_docs(message):
             if os.path.exists(local_path): os.remove(local_path)
 
             markup = types.InlineKeyboardMarkup()
-            btn_start = types.InlineKeyboardButton("⚡ ابدأ الفحص الثقيل", callback_data="start_checker")
-            btn_menu = types.InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="back_to_menu")
+            btn_start = types.InlineKeyboardButton("⚡ Start Heavy Scan", callback_data="start_checker")
+            btn_menu = types.InlineKeyboardButton("🏠 Main Menu", callback_data="back_to_menu")
             markup.add(btn_start, btn_menu)
 
             bot.edit_message_text(
-                f"✅ **تم فلترة البروكسيات بنجاح!**\n\n"
-                f"🟢 الشغالة (Clean): `{len(working_proxies)}` من `{len(raw_proxies)}`",
+                f"✅ **Proxies Filtered Successfully!**\n\n"
+                f"📊 Total Tested: `{total_proxies}`\n"
+                f"🟢 Working (Clean): `{len(working_proxies)}`\n"
+                f"🔴 Dead: `{total_proxies - len(working_proxies)}`",
                 chat_id=chat_id,
                 message_id=msg.message_id,
                 parse_mode="Markdown",
@@ -742,7 +767,6 @@ def process_checker(chat_id, filepath, lines, username):
     if hits > 0 and os.path.exists(output_filename):
         with open(output_filename, 'rb') as f:
             bot.send_document(chat_id, f, caption=f"🎯 **r1livk Heavy Hits ({hits} Hits)**")
-        # تنظيف ملف الهيتس من السيرفر بعد إرساله للمستخدم لتوفير المساحة
         try:
             os.remove(output_filename)
         except:
