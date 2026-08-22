@@ -294,7 +294,6 @@ def send_welcome(message):
         return
     show_main_menu(message)
 
-# --- أوامر المطور لإدارة البريميوم ---
 @bot.message_handler(commands=['addprem'])
 def add_premium_cmd(message):
     if message.from_user.id != OWNER_ID:
@@ -334,7 +333,8 @@ def list_premium_cmd(message):
     if not prem_users:
         bot.reply_to(message, "📂 No premium users found.")
     else:
-        bot.reply_to(message, f"💎 **Premium Users List:**\n" + "\n".join([`f"• `{uid}`` for uid in prem_users]), parse_mode="Markdown")
+        users_list_str = "\n".join([f"• `{uid}`" for uid in prem_users])
+        bot.reply_to(message, f"💎 **Premium Users List:**\n{users_list_str}", parse_mode="Markdown")
 
 def show_main_menu(message):
     chat_id = message.chat.id if hasattr(message, 'chat') else message.chat.id
