@@ -18,7 +18,7 @@ from telebot import types
 
 TOKEN = "8896382526:AAFMror2dFQ1U0r6RRHrrya2PKuyuoTRtnw"
 OWNER_ID = 6266959915
-CHANNEL_USERNAME = "@r1iv_k"  # قناتك الخاصة حصراً
+CHANNEL_USERNAME = "@r1iv_k"  # قناتك الرسمية للإجبار على الاشتراك
 bot = telebot.TeleBot(TOKEN)
 
 PREMIUM_USERS_FILE = "premium_users.txt"
@@ -386,10 +386,10 @@ def check_single_account(combo, proxy_list=None):
 def send_welcome(message):
     chat_id = message.chat.id
     
-    # التحقق من اشتراك المستخدم بقناتك حصراً
+    # التحقق التام من اشتراك المستخدم في القناة الرسمية
     if not check_user_subscription(chat_id):
         markup = types.InlineKeyboardMarkup(row_width=1)
-        btn_channel = types.InlineKeyboardButton("📢 اشترك في قناة r1livk الآن", url=f"https://t.me/{CHANNEL_USERNAME.replace('@', '')}")
+        btn_channel = types.InlineKeyboardButton("📢 اشترك في قناة r1ivk الآن", url=f"https://t.me/{CHANNEL_USERNAME.replace('@', '')}")
         btn_check = types.InlineKeyboardButton("🔄 تحقق من الاشتراك", callback_data="check_sub")
         markup.add(btn_channel, btn_check)
         
@@ -522,7 +522,7 @@ def callback_query(call):
         bot.answer_callback_query(call.id, "⏹️ Scan stopped.")
 
     elif call.data == "buy_premium":
-        bot.answer_callback_query(call.id, "💎 Premium Plan: $15/Month\nContact: @r1livk", show_alert=True)
+        bot.answer_callback_query(call.id, "💎 Premium Plan: $15/Month\nContact: @r1ivk", show_alert=True)
 
     elif call.data == "my_account":
         today = str(date.today())
