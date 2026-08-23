@@ -1,2 +1,3 @@
-pyTelegramBotAPI
-curl_cffi
+requests
+colorama
+urllib3
