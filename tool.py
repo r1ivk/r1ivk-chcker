@@ -18,7 +18,7 @@ from telebot import types
 
 TOKEN = "8896382526:AAFMror2dFQ1U0r6RRHrrya2PKuyuoTRtnw"
 OWNER_ID = 6266959915
-CHANNEL_USERNAME = "@r1iv_k"  
+CHANNEL_USERNAME = "@r1iv_k"
 bot = telebot.TeleBot(TOKEN)
 
 PREMIUM_USERS_FILE = "premium_users.txt"
@@ -61,10 +61,10 @@ def check_user_subscription(user_id):
     return False
 
 REQUEST_TIMEOUT = 30
-MAX_THREADS = 8  
+MAX_THREADS = 8
 
 active_scans = {}
-user_usage = {}  
+user_usage = {}
 DAILY_LIMIT = 2500
 
 def update_user_stats(user_id, checked_count, hits_count, username=None):
@@ -151,7 +151,6 @@ def test_single_proxy(proxy):
     return False, 0
 
 def fetch_heavy_xbox_details(session, xb_token, uhs, proxy_dict):
-    """فحص ثقيل ومباشر للألعاب، الـ Game Pass، والـ Gamerscore بدون أي ربط بالريوردز"""
     game_pass_status = "none"
     owned_games_formatted = []
     
