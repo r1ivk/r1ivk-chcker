@@ -150,7 +150,6 @@ def test_single_proxy(proxy):
     return False, 0
 
 def fetch_heavy_xbox_details(session, xb_token, uhs, proxy_dict):
-    """فحص ثقيل ومباشر للألعاب، الـ Game Pass، والـ Gamerscore بدون أي ربط بالريوردز"""
     game_pass_status = "none"
     owned_games_formatted = []
     
