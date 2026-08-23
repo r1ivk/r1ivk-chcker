@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-r1ivk Checker ⚡ - Telegram Bot (Heavy Gaming Edition - No Rewards)
+r1livk Checker ⚡ - Telegram Bot (Heavy Gaming Edition - No Rewards)
 Owner & Brand: r1ivk (@r1iv_k)
 """
 
@@ -71,7 +71,7 @@ def update_user_stats(user_id, checked_count, hits_count, username=None):
     uid_str = str(user_id)
     
     if uid_str not in stats:
-        stats[uid_str] = {"checked": 0, "hits": 0, "username": username or f"User_{user_id}"}
+        stats[uid_str] = {"checked": 0, "hits": 0, "username": username or f"User_{uid_str}"}
     
     stats[uid_str]["checked"] += checked_count
     stats[uid_str]["hits"] += hits_count
@@ -734,7 +734,7 @@ def process_checker(chat_id, filepath, lines, username):
         f"⏱️ Time: {t_mins:02d}:{t_secs:02d}\n"
         f"🏆 Stats updated!"
     )
-    bot.send_message(chat_id, completion_text, parse_mode="Markdown")
+    bot.send_message(chat_id, completion_text, parse_Mode="Markdown")
 
     if hits > 0 and os.path.exists(output_filename):
         with open(output_filename, 'rb') as f:
