@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-r1livk Checker ⚡ - Telegram Bot (Heavy Gaming Edition - No Rewards)
+r1livk Checker ⚡ - Telegram Bot (Heavy Gaming Edition - Mandatory Sub @r1iv_k)
 Cleaned & Optimized Version
 """
 
@@ -18,7 +18,7 @@ from telebot import types
 
 TOKEN = "8896382526:AAFMror2dFQ1U0r6RRHrrya2PKuyuoTRtnw"
 OWNER_ID = 6266959915
-CHANNEL_USERNAME = "@r1iv_k"
+CHANNEL_USERNAME = "@r1iv_k"  # قناتك الخاصة حصراً
 bot = telebot.TeleBot(TOKEN)
 
 PREMIUM_USERS_FILE = "premium_users.txt"
@@ -50,7 +50,7 @@ def load_premium_users():
         return set(line.strip() for line in f if line.strip())
 
 def check_user_subscription(user_id):
-    if user_id == OWNER_ID:
+    if user_id == OWNER_ID or str(user_id) in load_premium_users():
         return True
     try:
         member = bot.get_chat_member(CHANNEL_USERNAME, user_id)
@@ -386,15 +386,16 @@ def check_single_account(combo, proxy_list=None):
 def send_welcome(message):
     chat_id = message.chat.id
     
+    # التحقق من اشتراك المستخدم بقناتك حصراً
     if not check_user_subscription(chat_id):
         markup = types.InlineKeyboardMarkup(row_width=1)
-        btn_channel = types.InlineKeyboardButton("📢 اشترك في القناة الآن", url=f"https://t.me/{CHANNEL_USERNAME.replace('@', '')}")
+        btn_channel = types.InlineKeyboardButton("📢 اشترك في قناة r1livk الآن", url=f"https://t.me/{CHANNEL_USERNAME.replace('@', '')}")
         btn_check = types.InlineKeyboardButton("🔄 تحقق من الاشتراك", callback_data="check_sub")
         markup.add(btn_channel, btn_check)
         
         bot.send_message(
             chat_id, 
-            "⚠️ **عذراً، يجب عليك الاشتراك في قناة البوت أولاً لتتمكن من استخدامه!**\n\n"
+            "⚠️ **عذراً، يجب عليك الاشتراك في قناة البوت الرسمية أولاً لتتمكن من استخدامه!**\n\n"
             f"القناة: {CHANNEL_USERNAME}\n\n"
             "بعد الاشتراك، اضغط على زر **(تحقق من الاشتراك)** بالأسفل 👇",
             parse_mode="Markdown",
@@ -448,14 +449,14 @@ def callback_query(call):
 
     if call.data == "check_sub":
         if check_user_subscription(chat_id):
-            bot.answer_callback_query(call.id, "✅ شكراً لاشتراكك! تم فتح البوت بنجاح.", show_alert=True)
+            bot.answer_callback_query(call.id, "✅ شكراً لاشتراكك في القناة! تم فتح البوت بنجاح.", show_alert=True)
             show_main_menu(call.message)
         else:
             bot.answer_callback_query(call.id, "❌ لم تقم بالاشتراك في القناة بعد! الرجاء الاشتراك أولاً.", show_alert=True)
         return
 
     if not check_user_subscription(chat_id):
-        bot.answer_callback_query(call.id, "⚠️ يجب عليك الاشتراك في القناة أولاً!", show_alert=True)
+        bot.answer_callback_query(call.id, "⚠️ يجب عليك الاشتراك في قناة البوت أولاً!", show_alert=True)
         return
 
     if call.data == "start_checker":
