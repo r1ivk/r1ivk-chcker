@@ -18,7 +18,7 @@ from telebot import types
 urllib3.disable_warnings()
 
 # =================== CONFIGURATION ===================
-BOT_TOKEN = "8896382526:AAFMror2dFQ1U0r6RRHrrya2PKuyuoTRtnw"
+BOT_TOKEN = "8896382526:AAEySaJWfg6pQpoRuSu8zQaG50uJ_Jf0obg"
 OWNER_USERNAME = "@r1ivk"
 bot = telebot.TeleBot(BOT_TOKEN)
 
