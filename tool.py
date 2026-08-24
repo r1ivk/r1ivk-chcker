@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-r1livk GamePass Elite Checker & Filter Bot ⚡ [V6.5 Full No-Limit Version]
+r1livk GamePass Elite Checker & Filter Bot ⚡ [V6.6 No-0G Filter Version]
 """
 
 import os
@@ -16,7 +16,7 @@ from telebot import types
 
 TOKEN = "8896382526:AAEySaJWfg6pQpoRuSu8zQaG50uJ_Jf0obg"
 OWNER_ID = 6266959915
-CHANNEL_USERNAME = "@r1iv_k"  
+CHANNEL_USERNAME = "@r1liv_k"  
 bot = telebot.TeleBot(TOKEN)
 
 STATS_FILE = "user_stats.json"
@@ -223,6 +223,7 @@ async def check_gamepass_account(combo):
                     if s['id'] == 'Gamerscore': gamerscore = int(s['value']) if str(s['value']).isdigit() else 0
 
             game_pass_status = "No Game Pass ❌"
+            has_gamepass = False
             try:
                 sub_check_url = "https://eds.xboxlive.com/users/me/subscriptions"
                 sub_res = await session.get(
@@ -233,15 +234,19 @@ async def check_gamepass_account(combo):
                 txt_sub = sub_res.text.lower()
                 if "game pass ultimate" in txt_sub or "ultimate" in txt_sub:
                     game_pass_status = "🔥 Xbox Game Pass Ultimate!"
+                    has_gamepass = True
                 elif "game pass pc" in txt_sub or "pc access" in txt_sub:
                     game_pass_status = "💻 Xbox Game Pass PC!"
+                    has_gamepass = True
                 elif "game pass" in txt_sub:
                     game_pass_status = "🎮 Xbox Game Pass Standard!"
-                elif gamerscore > 0:
-                    game_pass_status = f"⚡ Active Account ({gamerscore}G) - No Active GP"
+                    has_gamepass = True
             except:
-                if gamerscore > 0:
-                    game_pass_status = f"⚡ Valid Account ({gamerscore}G)"
+                pass
+
+            # شرط التصفية المطلوبة: إذا كان الجيم سكور 0 وليس لديه جيم باس -> اعتبره Bad ولا تحفظه كـ Hit
+            if gamerscore == 0 and not has_gamepass:
+                return "bad", "Ignored 0G Account"
 
             hit_data = (
                 f"🎮 [GAME PASS & HIT FILTER] 🎮\n"
@@ -251,7 +256,7 @@ async def check_gamepass_account(combo):
                 f"Subscription: {game_pass_status}\n"
                 f"=================================================="
             )
-            return "hit", {"content": hit_data, "has_gp": "Game Pass" in game_pass_status}
+            return "hit", {"content": hit_data, "has_gp": has_gamepass}
 
     except Exception as e:
         return "error", str(e)
@@ -286,7 +291,7 @@ def show_main_menu(message):
     markup.add(btn_start, btn_top, btn_account)
 
     text = (
-        "⚡ **r1livk GamePass Filter & Checker - V6.5 (NO LIMIT)** ⚡\n\n"
+        "⚡ **r1livk GamePass Filter & Checker - V6.6 (No-0G Filter)** ⚡\n\n"
         "Specialized in filtering accounts and detecting Game Pass status!\n"
         "Your Status: 👑 Owner / Unlimited\n\n"
         "Select an option:"
@@ -369,7 +374,6 @@ def handle_docs(message):
         with open(local_path, 'wb') as f:
             f.write(downloaded_file)
 
-        # قراءة الملف بجميع الترميزات المتاحة لضمان عدم قراءة 0 أسطر
         lines = []
         for enc in ['utf-8', 'utf-8-sig', 'latin-1', 'cp1256']:
             try:
@@ -385,7 +389,7 @@ def handle_docs(message):
             if os.path.exists(local_path): os.remove(local_path)
             return
 
-        bot.reply_to(message, f"📥 تم قبول الملف. جاري بدء فحص {len(lines)} حساب بنجاح (Unlimited)...")
+        bot.reply_to(message, f"📥 تم قبول الملف. جاري بدء فحص {len(lines)} حساب بنجاح (فلترة الـ 0G مفعلة)...")
         active_scans[chat_id] = True
         username = message.from_user.username or message.from_user.first_name
         
@@ -395,9 +399,6 @@ def handle_docs(message):
 
     except Exception as e:
         bot.reply_to(message, f"Error: {e}")
-
-def run_async_thread(chat_id, filepath, lines, username):
-    asyncio.run(process_gp_scan(chat_id, filepath, lines, username))
 
 async def process_gp_scan(chat_id, filepath, lines, username):
     total = len(lines)
@@ -510,5 +511,5 @@ async def process_gp_scan(chat_id, filepath, lines, username):
             bot.send_document(chat_id, f, caption=f"📁 **Filtered GamePass Hits File:** {output_filename}")
 
 if __name__ == "__main__":
-    print("🚀 r1livk GamePass Filter Bot is running (Full No-Limit Version)...")
+    print("🚀 r1livk GamePass Filter Bot is running (No-0G Filter Version)...")
     bot.infinity_polling()
