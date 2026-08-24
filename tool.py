@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-r1livk GamePass Elite Checker & Filter Bot ⚡ [V6.2 Ultimate Fix]
+r1livk GamePass Elite Checker & Filter Bot ⚡ [V6.3 Ultimate Fix]
 """
 
 import os
@@ -24,7 +24,6 @@ STATS_FILE = "user_stats.json"
 
 user_states = {}
 
-# التأكد من إنشاء ملف البريميوم وإضافة آيديك فيه تلقائياً عند الإقلاع
 def init_premium_file():
     try:
         users = set()
@@ -76,7 +75,7 @@ def is_owner_or_premium(user_id):
     try:
         uid_int = int(user_id)
         uid_str = str(user_id)
-        if uid_int == int(OWNER_ID) or uid_str in load_premium_users():
+        if uid_int == int(OWNER_ID) or uid_str == str(OWNER_ID) or uid_str in load_premium_users():
             return True
     except:
         pass
@@ -112,7 +111,7 @@ def update_user_stats(user_id, checked_count, hits_count, username=None):
     save_json_data(STATS_FILE, stats)
 
 def check_daily_limit(chat_id, new_lines_count):
-    # إزالة الليميت تماماً وجعله مفتوحاً دائماً للمالك والبريميوم بدون أي قيود
+    # إزالة الليميت نهائياً لأي مالك أو بريميوم
     if is_owner_or_premium(chat_id):
         return True, new_lines_count
     
@@ -323,6 +322,26 @@ async def check_gamepass_account(combo):
     except Exception as e:
         return "error", str(e)
 
+# أمر لإضافة مستخدم بريميوم عبر البوت
+@bot.message_handler(commands=['addprem'])
+def add_premium_cmd(message):
+    if message.from_user.id != OWNER_ID:
+        return
+    try:
+        parts = message.text.split()
+        if len(parts) < 2:
+            bot.reply_to(message, "استخدم الأمر هكذا: `/addprem <user_id>`", parse_mode="Markdown")
+            return
+        target_id = parts[1].strip()
+        users = load_premium_users()
+        users.add(target_id)
+        with open(PREMIUM_USERS_FILE, "w") as f:
+            for u in users:
+                f.write(f"{u}\n")
+        bot.reply_to(message, f"✅ تمت إضافة المستخدم `{target_id}` إلى قائمة البريميوم بنجاح!", parse_mode="Markdown")
+    except Exception as e:
+        bot.reply_to(message, f"Error: {e}")
+
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     chat_id = message.chat.id
@@ -361,7 +380,7 @@ def show_main_menu(message):
         status_text = f"👤 Free ({used}/3000 lines today)"
 
     text = (
-        "⚡ **r1livk GamePass Filter & Checker - V6.2** ⚡\n\n"
+        "⚡ **r1livk GamePass Filter & Checker - V6.3** ⚡\n\n"
         "Specialized in filtering accounts and detecting Game Pass status!\n"
         f"Your Status: {status_text}\n\n"
         "Select an option:"
