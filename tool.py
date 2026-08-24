@@ -15,7 +15,7 @@ import telebot
 from telebot import types
 
 TOKEN = "8896382526:AAEySaJWfg6pQpoRuSu8zQaG50uJ_Jf0obg"
-OWNER_ID = 6266959915  # آيدي المالك الأساسي
+OWNER_ID = 6266959915  # آيدي المالك الأساسي الخاص بك
 CHANNEL_USERNAME = "@r1iv_k"  
 bot = telebot.TeleBot(TOKEN)
 
@@ -112,6 +112,7 @@ def update_user_stats(user_id, checked_count, hits_count, username=None):
     save_json_data(STATS_FILE, stats)
 
 def check_daily_limit(chat_id, new_lines_count):
+    # إزالة الليميت تماماً وجعله مفتوحاً دائماً للمالك والبريميوم بدون أي قيود
     if is_owner_or_premium(chat_id):
         return True, new_lines_count
     
