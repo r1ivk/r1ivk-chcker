@@ -14,7 +14,7 @@ from curl_cffi.requests import AsyncSession
 import telebot
 from telebot import types
 
-TOKEN = "8896382526:AAFMror2dFQ1U0r6RRHrrya2PKuyuoTRtnw"
+TOKEN = "8896382526:AAEySaJWfg6pQpoRuSu8zQaG50uJ_Jf0obg"
 OWNER_ID = 6266959915
 CHANNEL_USERNAME = "@r1iv_k"  
 bot = telebot.TeleBot(TOKEN)
