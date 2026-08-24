@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-r1livk GamePass Elite Checker & Filter Bot ⚡ [V6.4 No-Limit Fix]
+r1livk GamePass Elite Checker & Filter Bot ⚡ [V6.5 Full No-Limit Version]
 """
 
 import os
@@ -39,7 +39,6 @@ def save_json_data(filepath, data):
         pass
 
 def check_user_subscription(user_id):
-    # السماح الكامل للمالك دائماً بدون تحقق قناة
     if int(user_id) == int(OWNER_ID):
         return True
     try:
@@ -287,7 +286,7 @@ def show_main_menu(message):
     markup.add(btn_start, btn_top, btn_account)
 
     text = (
-        "⚡ **r1livk GamePass Filter & Checker - V6.4 (NO LIMIT)** ⚡\n\n"
+        "⚡ **r1livk GamePass Filter & Checker - V6.5 (NO LIMIT)** ⚡\n\n"
         "Specialized in filtering accounts and detecting Game Pass status!\n"
         "Your Status: 👑 Owner / Unlimited\n\n"
         "Select an option:"
@@ -370,16 +369,29 @@ def handle_docs(message):
         with open(local_path, 'wb') as f:
             f.write(downloaded_file)
 
-        with open(local_path, 'r', encoding='utf-8-sig', errors='ignore') as f:
-            lines = [line.strip() for line in f if line.strip() and ':' in line]
+        # قراءة الملف بجميع الترميزات المتاحة لضمان عدم قراءة 0 أسطر
+        lines = []
+        for enc in ['utf-8', 'utf-8-sig', 'latin-1', 'cp1256']:
+            try:
+                with open(local_path, 'r', encoding=enc) as f:
+                    lines = [line.strip() for line in f if line.strip() and ':' in line]
+                if lines:
+                    break
+            except:
+                continue
 
-        # تم الغاء الليميت نهائياً وفحص جميع السطور مهما بلغ عددها
-        bot.reply_to(message, f"📥 File accepted. Initializing GamePass Filter & Check for all {len(lines)} lines (Unlimited)...")
+        if not lines:
+            bot.reply_to(message, "⚠️ الملف فارغ أو لا يحتوي على تنسيق (email:password) صحيح!")
+            if os.path.exists(local_path): os.remove(local_path)
+            return
+
+        bot.reply_to(message, f"📥 تم قبول الملف. جاري بدء فحص {len(lines)} حساب بنجاح (Unlimited)...")
         active_scans[chat_id] = True
         username = message.from_user.username or message.from_user.first_name
         
         import threading
-        threading.Thread(target=run_async_thread, args=(chat_id, local_path, lines, username)).start()
+        t = threading.Thread(target=lambda: asyncio.run(process_gp_scan(chat_id, local_path, lines, username)))
+        t.start()
 
     except Exception as e:
         bot.reply_to(message, f"Error: {e}")
@@ -471,7 +483,7 @@ async def process_gp_scan(chat_id, filepath, lines, username):
                     pass
 
     prog_text = asyncio.create_task(updater())
-    asyncio.gather(*tasks, return_exceptions=True)
+    await asyncio.gather(*tasks, return_exceptions=True)
     active_scans[chat_id] = False
     prog_text.cancel()
 
@@ -498,5 +510,5 @@ async def process_gp_scan(chat_id, filepath, lines, username):
             bot.send_document(chat_id, f, caption=f"📁 **Filtered GamePass Hits File:** {output_filename}")
 
 if __name__ == "__main__":
-    print("🚀 r1livk GamePass Filter Bot is running (No-Limit Version)...")
+    print("🚀 r1livk GamePass Filter Bot is running (Full No-Limit Version)...")
     bot.infinity_polling()
