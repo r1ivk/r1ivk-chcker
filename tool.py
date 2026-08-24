@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-r1livk GamePass Elite Checker & Filter Bot ⚡ [V6.3 Ultimate Fix]
+r1livk GamePass Elite Checker & Filter Bot ⚡ [V6.4 No-Limit Fix]
 """
 
 import os
@@ -15,32 +15,12 @@ import telebot
 from telebot import types
 
 TOKEN = "8896382526:AAEySaJWfg6pQpoRuSu8zQaG50uJ_Jf0obg"
-OWNER_ID = 6266959915  # آيدي المالك الأساسي الخاص بك
+OWNER_ID = 6266959915
 CHANNEL_USERNAME = "@r1iv_k"  
 bot = telebot.TeleBot(TOKEN)
 
-PREMIUM_USERS_FILE = "premium_users.txt"
 STATS_FILE = "user_stats.json"
-
 user_states = {}
-
-def init_premium_file():
-    try:
-        users = set()
-        if os.path.exists(PREMIUM_USERS_FILE):
-            with open(PREMIUM_USERS_FILE, "r") as f:
-                for line in f:
-                    v = line.strip()
-                    if v:
-                        users.add(v)
-        users.add(str(OWNER_ID))
-        with open(PREMIUM_USERS_FILE, "w") as f:
-            for u in users:
-                f.write(f"{u}\n")
-    except:
-        pass
-
-init_premium_file()
 
 def load_json_data(filepath, default_val):
     if not os.path.exists(filepath):
@@ -58,31 +38,9 @@ def save_json_data(filepath, data):
     except:
         pass
 
-def load_premium_users():
-    users = {str(OWNER_ID)}
-    if os.path.exists(PREMIUM_USERS_FILE):
-        try:
-            with open(PREMIUM_USERS_FILE, "r") as f:
-                for line in f:
-                    val = line.strip()
-                    if val:
-                        users.add(val)
-        except:
-            pass
-    return users
-
-def is_owner_or_premium(user_id):
-    try:
-        uid_int = int(user_id)
-        uid_str = str(user_id)
-        if uid_int == int(OWNER_ID) or uid_str == str(OWNER_ID) or uid_str in load_premium_users():
-            return True
-    except:
-        pass
-    return False
-
 def check_user_subscription(user_id):
-    if is_owner_or_premium(user_id):
+    # السماح الكامل للمالك دائماً بدون تحقق قناة
+    if int(user_id) == int(OWNER_ID):
         return True
     try:
         member = bot.get_chat_member(CHANNEL_USERNAME, user_id)
@@ -96,8 +54,6 @@ REQUEST_TIMEOUT = 12
 CONCURRENT_LIMIT = 3
 
 active_scans = {}
-user_usage = {}
-DAILY_LIMIT = 3000
 
 def update_user_stats(user_id, checked_count, hits_count, username=None):
     stats = load_json_data(STATS_FILE, {})
@@ -109,27 +65,6 @@ def update_user_stats(user_id, checked_count, hits_count, username=None):
     if username:
         stats[uid_str]["username"] = username
     save_json_data(STATS_FILE, stats)
-
-def check_daily_limit(chat_id, new_lines_count):
-    # إزالة الليميت نهائياً لأي مالك أو بريميوم
-    if is_owner_or_premium(chat_id):
-        return True, new_lines_count
-    
-    today = str(date.today())
-    if chat_id not in user_usage or user_usage[chat_id]["date"] != today:
-        user_usage[chat_id] = {"date": today, "count": 0}
-    current_used = user_usage[chat_id]["count"]
-    if current_used >= DAILY_LIMIT:
-        return False, 0
-    allowed_lines = min(new_lines_count, DAILY_LIMIT - current_used)
-    return True, allowed_lines
-
-def update_usage(chat_id, count):
-    if is_owner_or_premium(chat_id):
-        return
-    today = str(date.today())
-    if chat_id in user_usage and user_usage[chat_id]["date"] == today:
-        user_usage[chat_id]["count"] += count
 
 def extract_ppft(text):
     patterns = [
@@ -322,26 +257,6 @@ async def check_gamepass_account(combo):
     except Exception as e:
         return "error", str(e)
 
-# أمر لإضافة مستخدم بريميوم عبر البوت
-@bot.message_handler(commands=['addprem'])
-def add_premium_cmd(message):
-    if message.from_user.id != OWNER_ID:
-        return
-    try:
-        parts = message.text.split()
-        if len(parts) < 2:
-            bot.reply_to(message, "استخدم الأمر هكذا: `/addprem <user_id>`", parse_mode="Markdown")
-            return
-        target_id = parts[1].strip()
-        users = load_premium_users()
-        users.add(target_id)
-        with open(PREMIUM_USERS_FILE, "w") as f:
-            for u in users:
-                f.write(f"{u}\n")
-        bot.reply_to(message, f"✅ تمت إضافة المستخدم `{target_id}` إلى قائمة البريميوم بنجاح!", parse_mode="Markdown")
-    except Exception as e:
-        bot.reply_to(message, f"Error: {e}")
-
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     chat_id = message.chat.id
@@ -368,21 +283,13 @@ def show_main_menu(message):
     markup = types.InlineKeyboardMarkup(row_width=1)
     btn_start = types.InlineKeyboardButton("🎮 Start GamePass Filter Bot", callback_data="start_checker")
     btn_top = types.InlineKeyboardButton("🏆 Leaderboard", callback_data="show_leaderboard")
-    btn_premium = types.InlineKeyboardButton("💎 Buy Premium ($15/Month)", callback_data="buy_premium")
     btn_account = types.InlineKeyboardButton("👤 My Account", callback_data="my_account")
-    markup.add(btn_start, btn_top, btn_premium, btn_account)
-
-    today = str(date.today())
-    if is_owner_or_premium(chat_id):
-        status_text = "👑 Premium / Owner (Unlimited)"
-    else:
-        used = user_usage.get(chat_id, {}).get("count", 0) if user_usage.get(chat_id, {}).get("date") == today else 0
-        status_text = f"👤 Free ({used}/3000 lines today)"
+    markup.add(btn_start, btn_top, btn_account)
 
     text = (
-        "⚡ **r1livk GamePass Filter & Checker - V6.3** ⚡\n\n"
+        "⚡ **r1livk GamePass Filter & Checker - V6.4 (NO LIMIT)** ⚡\n\n"
         "Specialized in filtering accounts and detecting Game Pass status!\n"
-        f"Your Status: {status_text}\n\n"
+        "Your Status: 👑 Owner / Unlimited\n\n"
         "Select an option:"
     )
     if msg_id:
@@ -403,10 +310,6 @@ def callback_query(call):
             show_main_menu(call.message)
         else:
             bot.answer_callback_query(call.id, "❌ Not joined yet!", show_alert=True)
-        return
-
-    if not check_user_subscription(chat_id):
-        bot.answer_callback_query(call.id, "⚠️ Subscribe to channel first!", show_alert=True)
         return
 
     if call.data == "start_checker":
@@ -449,16 +352,8 @@ def callback_query(call):
         active_scans[chat_id] = False
         bot.answer_callback_query(call.id, "⏹️ Scan stopped.")
 
-    elif call.data == "buy_premium":
-        bot.answer_callback_query(call.id, "💎 Premium Plan: $15/Month\nContact: @r1ivk", show_alert=True)
-
     elif call.data == "my_account":
-        today = str(date.today())
-        if is_owner_or_premium(chat_id):
-            bot.answer_callback_query(call.id, "Status: Premium / Owner (Unlimited)\nMode: GamePass Filter", show_alert=True)
-        else:
-            used = user_usage.get(chat_id, {}).get("count", 0) if user_usage.get(chat_id, {}).get("date") == today else 0
-            bot.answer_callback_query(call.id, f"Status: Free ({used}/3000 lines)\nMode: GamePass Filter", show_alert=True)
+        bot.answer_callback_query(call.id, "Status: Owner (Unlimited)\nMode: GamePass Filter", show_alert=True)
 
 @bot.message_handler(content_types=['document'])
 def handle_docs(message):
@@ -478,14 +373,8 @@ def handle_docs(message):
         with open(local_path, 'r', encoding='utf-8-sig', errors='ignore') as f:
             lines = [line.strip() for line in f if line.strip() and ':' in line]
 
-        allowed, count_allowed = check_daily_limit(chat_id, len(lines))
-        if not allowed or count_allowed <= 0:
-            bot.reply_to(message, "⚠️ Daily limit reached! Upgrade to Premium.")
-            if os.path.exists(local_path): os.remove(local_path)
-            return
-
-        lines = lines[:count_allowed]
-        bot.reply_to(message, f"📥 File accepted. Initializing GamePass Filter & Check for {len(lines)} lines...")
+        # تم الغاء الليميت نهائياً وفحص جميع السطور مهما بلغ عددها
+        bot.reply_to(message, f"📥 File accepted. Initializing GamePass Filter & Check for all {len(lines)} lines (Unlimited)...")
         active_scans[chat_id] = True
         username = message.from_user.username or message.from_user.first_name
         
@@ -590,7 +479,6 @@ async def process_gp_scan(chat_id, filepath, lines, username):
         os.remove(filepath)
 
     update_user_stats(chat_id, checked, hits, username)
-    update_usage(chat_id, checked)
 
     final_msg = (
         f"🎉 **SCAN & FILTER COMPLETED!**\n\n"
@@ -610,5 +498,5 @@ async def process_gp_scan(chat_id, filepath, lines, username):
             bot.send_document(chat_id, f, caption=f"📁 **Filtered GamePass Hits File:** {output_filename}")
 
 if __name__ == "__main__":
-    print("🚀 r1livk GamePass Filter Bot is running...")
+    print("🚀 r1livk GamePass Filter Bot is running (No-Limit Version)...")
     bot.infinity_polling()
