@@ -1,5 +1,2 @@
 requests
 colorama
-urllib3
-curl_cffi
-pyTelegramBotAPI
