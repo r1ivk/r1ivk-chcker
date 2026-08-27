@@ -5,6 +5,7 @@ import os
 import json
 import requests
 import threading
+import asyncio
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import quote, unquote
@@ -415,6 +416,11 @@ class Stats:
 
 # ─── Telegram Bot Logic ──────────────────────────────────────────
 TOKEN = "8896382526:AAEySaJWfg6pQpoRuSu8zQaG50uJ_Jf0obg"
+app_loop = None
+
+async def post_init(application):
+    global app_loop
+    app_loop = asyncio.get_running_loop()
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
@@ -448,8 +454,8 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text("⏳ جاري فحص الحسابات...")
 
-    # حفظ الـ context للاتصال بالبوت داخل الثريد
     bot_app = context.bot
+    chat_id = update.effective_chat.id
 
     def run_checking():
         for email, pwd in combos:
@@ -473,7 +479,6 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             results_mgr.save_result(email, pwd, res)
 
-            # إرسال الحسابات الناجحة (Premium) مباشرة للمستخدم على الشات
             if status == "PREMIUM":
                 data = res.get('data', {})
                 text = (f"🔥 **حساب بريميوم جديد!**\n"
@@ -481,11 +486,11 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         f"🎮 النوع: `{data.get('premium_type', 'N/A')}`\n"
                         f"⏳ الأيام المتبقية: `{data.get('days_remaining', '0')}`")
                 try:
-                    import asyncio
-                    asyncio.run_coroutine_threadsafe(
-                        bot_app.send_message(chat_id=update.effective_chat.id, text=text, parse_mode="Markdown"),
-                        app_loop
-                    )
+                    if app_loop and app_loop.is_running():
+                        asyncio.run_coroutine_threadsafe(
+                            bot_app.send_message(chat_id=chat_id, text=text, parse_mode="Markdown"),
+                            app_loop
+                        )
                 except:
                     pass
 
@@ -493,12 +498,8 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🚀 بدأت عملية الفحص في الخلفية، سيتم إعلامك بالنتائج أولاً بأول.")
 
 
-app_loop = None
-
 def main():
-    global app_loop
-    app = ApplicationBuilder().token(TOKEN).build()
-    app_loop = app.updater.bot.loop if hasattr(app.updater, "bot") else None
+    app = ApplicationBuilder().token(TOKEN).post_init(post_init).build()
     
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
