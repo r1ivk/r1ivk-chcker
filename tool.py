@@ -13,7 +13,7 @@ import telebot
 from telebot.types import FSInputFile
 
 # ─── Bot Configuration ───────────────────────────────────────────
-TOKEN = "YOUR_BOT_TOKEN_HERE"  # ضع توكن البوت هنا
+TOKEN = "YOUR_BOT_TOKEN_HERE"  # 8896382526:AAEySaJWfg6pQpoRuSu8zQaG50uJ_Jf0obg
 BOT_NAME = "r1ivk"             # اسم البوت لتوليد الملفات بالنمط المطلوب
 bot = telebot.TeleBot(TOKEN)
 
