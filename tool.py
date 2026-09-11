@@ -31,7 +31,7 @@ log = logging.getLogger("r1ivk")
 
 # =================== CONFIG ===================
 # Read from environment for safety; fallback to placeholder
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "PUT_YOUR_TOKEN_HERE")
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "8896382526:AAG7lmuFPHniEXHsMTBzLnw8cBqIf-wPK3w")
 OWNER_ID  = int(os.environ.get("OWNER_ID", "6266959915"))
 ADMIN_IDS = []                              # extra admin chat ids
 RESULTS_DIR = "XBOX_RESULT"
